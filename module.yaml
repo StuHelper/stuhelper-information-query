@@ -1,0 +1,45 @@
+id: information-query
+version: 0.1.0
+kind: module
+api: 1
+critical: false
+requires:
+  - id: platform
+    api: 1
+optional:
+  - id: profiles
+    api: 1
+  - id: verification
+    api: 1
+  - id: catalog
+    api: 1
+  - id: reviews
+    api: 1
+  - id: resources
+    api: 1
+  - id: billing
+    api: 1
+  - id: groups
+    api: 1
+capabilities:
+  - information-query.query
+  - information-query.audit
+scenario_tests:
+  IQ-01:
+    - service_test.go#TestPlatformQQAndSeparateCandidates
+  IQ-02:
+    - service_test.go#TestScopeAndDomainIsolation
+  IQ-03:
+    - service_test.go#TestPlatformQQAndSeparateCandidates
+  IQ-04:
+    - service_test.go#TestScopeAndDomainIsolation
+  IQ-05:
+    - service_test.go#TestBotDefaultAndGroupDelivery
+  IQ-06:
+    - service_test.go#TestSensitiveMaskAuditAndFailure
+    - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
+  IQ-07:
+    - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit
+    - service_test.go#TestSensitiveMaskAuditAndFailure
+  IQ-08:
+    - service_test.go#TestBotDefaultAndGroupDelivery
