@@ -165,15 +165,7 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 	}
 	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
 	cutoff := now.AddDate(-1, 0, 0)
-	// Explicit old-schema fixture verifies the retention timestamp backfill on migration.
-	_, e = pool.Exec(ctx, `ALTER TABLE information_query.audit DROP COLUMN created_at; INSERT INTO information_query.audit(school,group_id,module,body) VALUES ('a','g','profiles','{"created_at":"2024-01-01T00:00:00Z"}')`)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = r.Migrate(ctx); e != nil {
-		t.Fatal(e)
-	}
-	for _, at := range []time.Time{cutoff.Add(-time.Second), cutoff.Add(-time.Second), cutoff, cutoff.Add(time.Second)} {
+	for _, at := range []time.Time{cutoff.Add(-time.Second), cutoff.Add(-time.Second), cutoff.Add(-time.Second), cutoff, cutoff.Add(time.Second)} {
 		if e = r.Append(ctx, iq.Audit{Scope: admin.Global, CreatedAt: at}); e != nil {
 			t.Fatal(e)
 		}

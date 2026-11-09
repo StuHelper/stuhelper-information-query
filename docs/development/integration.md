@@ -43,7 +43,7 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
 
-用迁移身份执行 postgres.Repository.Migrate，包含已有审计时间回填与时间索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE。把运行身份连接池注入 Repository，再注入 Service.Repo。
+用迁移身份执行 postgres.Repository.Migrate。001_audit.sql 直接定义最终审计表，created_at 非空且默认取当前时间，并建立保留清理索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE。把运行身份连接池注入 Repository，再注入 Service.Repo。
 
 Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
 
@@ -79,6 +79,6 @@ PruneAudit 每次 limit 为 1 至 1000，按 created_at、id 稳定选择并在�
 
 module.yaml 登记 IQ-01 至 IQ-08 及实现补充场景 IQ-09（解析故障与隔离）、IQ-10（组合分页及预算）、IQ-11（保留与维护权限）。测试覆盖三类线索、同名分离、历史绑定、跨域授权、候选变更、账号隔离和分页不重不漏。
 
-隔离 PostgreSQL 测试覆盖迁移回填与重放、并发审计写入、敏感响应提交要求、有界删除、截止时间边界、重复清理、维护身份与运行身份的权限分离。2026-11-09 已通过 GOWORK=off、隔离 PostgreSQL 18.6 完整检查：生成一致性、repository、docs、场景登记、gofmt、vet、race、build 和 workflows。
+隔离 PostgreSQL 测试覆盖建表与重复执行、并发审计写入、敏感响应提交要求、有界删除、截止时间边界、重复清理、维护身份与运行身份的权限分离。2026-11-09 已通过 GOWORK=off、隔离 PostgreSQL 18.6 完整检查：生成一致性、repository、docs、场景登记、gofmt、vet、race、build 和 workflows。
 
 待完成：真实 Resolver/Provider 与 backend 联调，消费者 0.2.0 升级及实际组合验证，批量预览和导出，争议保留自动排除，恢复演练。未执行真实账号验收、发行或部署。
