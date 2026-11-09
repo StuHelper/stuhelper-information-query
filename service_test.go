@@ -57,32 +57,23 @@ func (p *provider) Query(_ context.Context, _ account.Principal, _ iq.Query) ([]
 func fixture() (*iq.Service, *repo, *auth, *provider, iq.Query) {
 	r := &repo{}
 	a := &auth{caps: map[string]bool{"information-query.profiles.read": true}, scope: scope}
-	p := &provider{items: []iq.Record{{ID: "profiles:1", Subject: "user:1", Scope: scope, Source: "qq-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "name", Category: "identity", Value: "同名"}, {Name: "qq", Category: "identity", Value: "123456789"}, {Name: "document", Category: "document", Value: "private-document"}, {Name: "material", Category: "material", Value: "private-material"}, {Name: "refund", Category: "refund", Value: "private-refund"}}}}}
+	p := &provider{items: []iq.Record{{ID: "profiles:1", Subject: "user:1", Scope: scope, Source: "qq-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "name", Category: "identity", Value: "同名"}, {Name: "qq", Category: "identity", Value: "123456789"}, {Name: "document", Category: "document", Value: "private-document"}, {Name: "material", Category: "material", Value: "private-material"}, {Name: "refund_payee", Category: "refund_payee", Value: "private-refund"}}}}}
 	s := &iq.Service{Auth: a, Repo: r, Providers: map[string]iq.Provider{"profiles": p}}
-	q := iq.Query{Kind: "qq", Value: "123456789", Scope: scope, Domains: []string{"profiles"}, Fields: []string{}, Purpose: "业务核查", Limit: 20}
+	q := iq.Query{Kind: "account", Value: "user:1", Scope: scope, Domains: []string{"profiles"}, Fields: []string{}, Purpose: "业务核查", Limit: 20}
 	return s, r, a, p, q
 }
 func run(s *iq.Service, q iq.Query) (iq.Result, error) {
 	return s.Query(context.Background(), actor, "request-1", iq.Delivery{Channel: "admin"}, q)
 }
-func TestPlatformQQAndSeparateCandidates(t *testing.T) {
-	s, r, a, p, q := fixture()
+func TestPlatformSensitiveFields(t *testing.T) {
+	s, r, a, _, q := fixture()
 	a.platform = true
-	q.Fields = []string{"identity", "document", "material", "refund"}
+	q.Fields = []string{"identity", "document", "material", "refund_payee"}
 	out, e := run(s, q)
-	if e != nil || len(out.Items) != 1 || len(out.Items[0].Fields) != 5 || len(r.records) != 1 {
+	if e != nil || recordCount(out) != 1 || len(out.Groups[0].Items[0].Fields) != 5 || len(r.records) != 1 {
 		t.Fatalf("%+v %v", out, e)
 	}
-	p.items = append(p.items, p.items[0])
-	p.items[1].ID = "profiles:2"
-	p.items[1].Subject = "user:2"
-	p.items[1].Current = false
-	q.Kind = "name"
-	q.Value = "同名"
-	out, e = run(s, q)
-	if e != nil || len(out.Items) != 2 || out.Items[0].Subject == out.Items[1].Subject || out.Items[1].Current {
-		t.Fatal("names merged or history lost", e)
-	}
+
 }
 func TestScopeAndDomainIsolation(t *testing.T) {
 	s, r, _, p, q := fixture()
@@ -93,21 +84,21 @@ func TestScopeAndDomainIsolation(t *testing.T) {
 	q.Scope = scope
 	p.items[0].Scope.School = "school-b"
 	out, e := run(s, q)
-	if !errors.Is(e, iq.ErrUnavailable) || len(out.Items) != 0 {
+	if !errors.Is(e, iq.ErrUnavailable) || recordCount(out) != 0 {
 		t.Fatal("provider scope leaked", e)
 	}
 	s, _, _, p, q = fixture()
 	q.Scope.Module = "*"
 	q.Domains = []string{"profiles", "billing"}
 	out, e = run(s, q)
-	if !errors.Is(e, iq.ErrForbidden) || len(out.Items) > 0 {
+	if !errors.Is(e, iq.ErrForbidden) || recordCount(out) > 0 {
 		t.Fatal("wallet permission bypass", e)
 	}
 }
 func TestSensitiveMaskAuditAndFailure(t *testing.T) {
 	s, r, a, _, q := fixture()
 	out, e := run(s, q)
-	if e != nil || len(out.Items[0].Fields) != 2 || out.Items[0].Fields[0].Value != "***" || !out.Items[0].Fields[1].Masked {
+	if e != nil || len(out.Groups[0].Items[0].Fields) != 2 || out.Groups[0].Items[0].Fields[0].Value != "***" || !out.Groups[0].Items[0].Fields[1].Masked {
 		t.Fatal("mask", e)
 	}
 	q.Fields = []string{"identity"}
@@ -116,10 +107,10 @@ func TestSensitiveMaskAuditAndFailure(t *testing.T) {
 	}
 	a.caps["information-query.identity.read"] = true
 	out, e = run(s, q)
-	if e != nil || out.Items[0].Fields[0].Value != "同名" || r.records[len(r.records)-1].Count != 1 {
+	if e != nil || out.Groups[0].Items[0].Fields[0].Value != "同名" || r.records[len(r.records)-1].Count != 1 {
 		t.Fatal("disclosure", e)
 	}
-	for _, category := range []string{"document", "material", "refund"} {
+	for _, category := range []string{"document", "material", "refund_payee"} {
 		q.Fields = []string{category}
 		if _, e = run(s, q); !errors.Is(e, iq.ErrForbidden) {
 			t.Fatal("independent capability", category, e)
@@ -128,7 +119,7 @@ func TestSensitiveMaskAuditAndFailure(t *testing.T) {
 	q.Fields = []string{"identity"}
 	r.fail = true
 	out, e = run(s, q)
-	if !errors.Is(e, iq.ErrUnavailable) || len(out.Items) != 0 {
+	if !errors.Is(e, iq.ErrUnavailable) || recordCount(out) != 0 {
 		t.Fatal("audit failure disclosed", e)
 	}
 }
@@ -145,7 +136,7 @@ func TestBotDefaultAndGroupDelivery(t *testing.T) {
 	a.caps["information-query.bot"] = true
 	out, e := s.Query(context.Background(), actor, "r", d, q)
 	last := r.records[len(r.records)-1]
-	if e != nil || len(out.Items) != 1 || last.Channel != "bot_group" || last.TargetGroup != "chat-1" {
+	if e != nil || recordCount(out) != 1 || last.Channel != "bot_group" || last.TargetGroup != "chat-1" {
 		t.Fatal(e)
 	}
 	a.caps["information-query.bot"] = false
@@ -174,7 +165,7 @@ func TestInvalidAndAnonymous(t *testing.T) {
 	if _, e := s.Query(context.Background(), account.Principal{}, "r", iq.Delivery{Channel: "admin"}, q); !errors.Is(e, iq.ErrUnauthenticated) {
 		t.Fatal(e)
 	}
-	q.Kind = "student_number"
+	q.Kind = "student_id"
 	q.Scope.School = "*"
 	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || p.calls != 0 || len(r.records) != 2 {
 		t.Fatal(e)
@@ -196,9 +187,17 @@ func (platformRepo) Write(context.Context, func(admin.Store) error) error { pani
 func TestPlatformEvaluateIntegration(t *testing.T) {
 	s, _, _, _, q := fixture()
 	s.Auth = admin.Service{Identity: platformIdentity{}, Repo: platformRepo{}}
-	q.Fields = []string{"identity", "document", "material", "refund"}
+	q.Fields = []string{"identity", "document", "material", "refund_payee"}
 	out, e := run(s, q)
-	if e != nil || len(out.Items[0].Fields) != 5 {
+	if e != nil || len(out.Groups[0].Items[0].Fields) != 5 {
 		t.Fatal("platform full capabilities", e)
 	}
+}
+
+func recordCount(out iq.Result) int {
+	n := 0
+	for _, g := range out.Groups {
+		n += len(g.Items)
+	}
+	return n
 }

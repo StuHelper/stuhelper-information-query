@@ -1,5 +1,5 @@
 id: information-query
-version: 0.1.0
+version: 0.2.0
 kind: module
 api: 1
 critical: false
@@ -7,6 +7,8 @@ requires:
   - id: platform
     api: 1
 optional:
+  - id: qq-binding
+    api: 1
   - id: profiles
     api: 1
   - id: verification
@@ -26,12 +28,13 @@ capabilities:
   - information-query.audit
 scenario_tests:
   IQ-01:
-    - service_test.go#TestPlatformQQAndSeparateCandidates
+    - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-02:
     - service_test.go#TestScopeAndDomainIsolation
   IQ-03:
-    - service_test.go#TestPlatformQQAndSeparateCandidates
+    - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-04:
+    - resolver_test.go#TestResolverFailureAndIsolation
     - service_test.go#TestScopeAndDomainIsolation
   IQ-05:
     - service_test.go#TestBotDefaultAndGroupDelivery
@@ -43,3 +46,10 @@ scenario_tests:
     - service_test.go#TestSensitiveMaskAuditAndFailure
   IQ-08:
     - service_test.go#TestBotDefaultAndGroupDelivery
+  IQ-09:
+    - resolver_test.go#TestResolverFailureAndIsolation
+  IQ-10:
+    - resolver_test.go#TestCompositePagination
+    - resolver_test.go#TestCandidateChangeAndWorkBound
+  IQ-11:
+    - postgres/repository_test.go#TestBoundedPruneAndMaintenancePrivileges

@@ -106,14 +106,14 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := iq.Service{Auth: allow{}, Repo: r, Providers: map[string]iq.Provider{"profiles": records{}}}
-	q := iq.Query{Kind: "qq", Value: "123456789", Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
+	q := iq.Query{Kind: "account", Value: "user-1", Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
 	out, e := s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "disclosure-request", iq.Delivery{Channel: "bot_group", Group: "g"}, q)
-	if e != iq.ErrForbidden || len(out.Items) != 0 {
+	if e != iq.ErrForbidden || recordCount(out) != 0 {
 		t.Fatal("bot default", e)
 	}
 	s.BotEnabled = true
 	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "disclosure-request", iq.Delivery{Channel: "bot_group", Group: "g"}, q)
-	if e != nil || len(out.Items) != 1 || out.Items[0].Fields[0].Value != "123456789" {
+	if e != nil || recordCount(out) != 1 || out.Groups[0].Items[0].Fields[0].Value != "123456789" {
 		t.Fatal(e)
 	}
 	var count int
@@ -135,7 +135,93 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	defer readOnly.Close()
 	s.Repo = postgres.Repository{Pool: readOnly}
 	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "blocked", iq.Delivery{Channel: "admin"}, q)
-	if e != iq.ErrUnavailable || len(out.Items) != 0 {
+	if e != iq.ErrUnavailable || recordCount(out) != 0 {
 		t.Fatal("failed commit leaked", e)
+	}
+}
+
+func recordCount(out iq.Result) int {
+	n := 0
+	for _, g := range out.Groups {
+		n += len(g.Items)
+	}
+	return n
+}
+
+func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	cutoff := now.AddDate(-1, 0, 0)
+	// Explicit old-schema fixture verifies the retention timestamp backfill on migration.
+	_, e = pool.Exec(ctx, `ALTER TABLE information_query.audit DROP COLUMN created_at; INSERT INTO information_query.audit(school,group_id,module,body) VALUES ('a','g','profiles','{"created_at":"2024-01-01T00:00:00Z"}')`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	for _, at := range []time.Time{cutoff.Add(-time.Second), cutoff.Add(-time.Second), cutoff, cutoff.Add(time.Second)} {
+		if e = r.Append(ctx, iq.Audit{Scope: admin.Global, CreatedAt: at}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	_, e = pool.Exec(ctx, `CREATE ROLE iq_maintenance NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_maintenance; GRANT SELECT,DELETE ON information_query.audit TO iq_maintenance; CREATE ROLE iq_prune_runtime NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_prune_runtime; GRANT SELECT,INSERT ON information_query.audit TO iq_prune_runtime;`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	makePool := func(role string) *pgxpool.Pool {
+		cfg, e := pgxpool.ParseConfig(dsn)
+		if e != nil {
+			t.Fatal(e)
+		}
+		cfg.ConnConfig.RuntimeParams["role"] = role
+		p, e := pgxpool.NewWithConfig(ctx, cfg)
+		if e != nil {
+			t.Fatal(e)
+		}
+		t.Cleanup(p.Close)
+		return p
+	}
+	m := postgres.Maintenance{Pool: makePool("iq_maintenance"), Now: func() time.Time { return now }}
+	runtime := postgres.Maintenance{Pool: makePool("iq_prune_runtime"), Now: m.Now}
+	if n, e := runtime.PruneAudit(ctx, cutoff, 1); e == nil || n != 0 {
+		t.Fatal("runtime deletion allowed", n, e)
+	}
+	if _, e = m.Pool.Exec(ctx, `INSERT INTO information_query.audit(school,group_id,module,body) VALUES ('a','g','m','{}')`); e == nil {
+		t.Fatal("maintenance insert allowed")
+	}
+	if _, e = m.Pool.Exec(ctx, `UPDATE information_query.audit SET school='changed'`); e == nil {
+		t.Fatal("maintenance update allowed")
+	}
+	for _, limit := range []int{0, -1, 1001} {
+		if _, e = m.PruneAudit(ctx, cutoff, limit); e != iq.ErrInvalid {
+			t.Fatal("invalid limit", e)
+		}
+	}
+	if _, e = m.PruneAudit(ctx, cutoff.Add(time.Second), 1); e != iq.ErrInvalid {
+		t.Fatal("retention shortened", e)
+	}
+	for _, want := range []int{2, 1, 0} {
+		n, e := m.PruneAudit(ctx, cutoff, 2)
+		if e != nil || n != want {
+			t.Fatal("bounded/repeated cleanup", n, e)
+		}
+	}
+	var kept int
+	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE created_at=$1 OR created_at=$2`, cutoff, cutoff.Add(time.Second)).Scan(&kept); e != nil || kept != 2 {
+		t.Fatal("boundary removed", kept, e)
 	}
 }

@@ -46,9 +46,9 @@ type Record struct {
 	Fields    []Field     `json:"fields"`
 }
 type Result struct {
-	Items              []Record `json:"items"`
-	NextCursor         string   `json:"next_cursor"`
-	UnavailableDomains []string `json:"unavailable_domains"`
+	Groups             []CandidateGroup `json:"groups"`
+	NextCursor         string           `json:"next_cursor"`
+	UnavailableDomains []string         `json:"unavailable_domains"`
 }
 
 // Delivery is supplied by authenticated host middleware, never from JSON or headers.
@@ -95,4 +95,40 @@ type AuditPage struct {
 type Repository interface {
 	Append(context.Context, Audit) error
 	Read(context.Context, AuditFilter) (AuditPage, error)
+}
+
+// Lead is resolved only by the module that owns the identity facts.
+type Lead struct {
+	Kind, Value string
+	Scope       admin.Scope
+	Purpose     string
+	Limit       int
+	After       string
+}
+
+func (Lead) String() string     { return "informationquery.Lead{redacted}" }
+func (l Lead) GoString() string { return l.String() }
+
+type Candidate struct {
+	Account   string      `json:"account"`
+	Source    string      `json:"source"`
+	Current   bool        `json:"current"`
+	ChangedAt time.Time   `json:"changed_at"`
+	Scope     admin.Scope `json:"scope"`
+	Label     []Field     `json:"label"`
+}
+type CandidateGroup struct {
+	Candidate Candidate `json:"candidate"`
+	Items     []Record  `json:"items"`
+}
+
+// Resolver filters effective scope before stable exclusive pagination (maximum 50).
+// Labels must be masked; identifiers and cursors must not contain raw lead values.
+type Resolver interface {
+	Resolve(context.Context, account.Principal, Lead) ([]Candidate, string, error)
+}
+
+// AuditPruner is exposed only to the separately authenticated maintenance process.
+type AuditPruner interface {
+	PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 }

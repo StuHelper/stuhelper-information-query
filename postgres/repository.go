@@ -17,19 +17,28 @@ type Repository struct{ Pool *pgxpool.Pool }
 
 // Migrate must run with a separate migration identity.
 func (r Repository) Migrate(ctx context.Context) error {
-	b, e := migrations.ReadFile("migrations/001_audit.sql")
-	if e != nil {
-		return e
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		return err
 	}
-	_, e = r.Pool.Exec(ctx, string(b))
-	return e
+	for _, entry := range entries {
+		b, err := migrations.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			return err
+		}
+		if _, err = r.Pool.Exec(ctx, string(b)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
+
 func (r Repository) Append(ctx context.Context, a iq.Audit) error {
 	b, e := json.Marshal(a)
 	if e != nil {
 		return e
 	}
-	_, e = r.Pool.Exec(ctx, `INSERT INTO information_query.audit(school,group_id,module,body) VALUES($1,$2,$3,$4)`, a.Scope.School, a.Scope.Group, a.Scope.Module, b)
+	_, e = r.Pool.Exec(ctx, `INSERT INTO information_query.audit(school,group_id,module,body,created_at) VALUES($1,$2,$3,$4,$5)`, a.Scope.School, a.Scope.Group, a.Scope.Module, b, a.CreatedAt)
 	return e
 }
 func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPage, err error) {

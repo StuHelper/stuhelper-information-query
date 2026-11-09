@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper Information Query",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/v1/information-query/query": {
@@ -183,9 +183,9 @@
             "type": "string",
             "enum": [
               "name",
-              "student_number",
+              "student_id",
               "qq",
-              "subject"
+              "account"
             ]
           },
           "value": {
@@ -224,7 +224,7 @@
                 "identity",
                 "document",
                 "material",
-                "refund"
+                "refund_payee"
               ]
             },
             "description": "Sensitive categories explicitly requested; omitted means masked identity fields only."
@@ -237,12 +237,13 @@
           "limit": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 100
+            "maximum": 100,
+            "description": "Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page."
           },
           "after": {
             "type": "string",
-            "maxLength": 256,
-            "description": "Exclusive lower bound: last globally unique <domain>:<id> from the previous page."
+            "maxLength": 4096,
+            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation."
           }
         },
         "required": [
@@ -268,7 +269,7 @@
               "identity",
               "document",
               "material",
-              "refund"
+              "refund_payee"
             ]
           },
           "value": {
@@ -329,12 +330,6 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Record"
-            }
-          },
           "next_cursor": {
             "type": "string"
           },
@@ -344,10 +339,17 @@
               "type": "string"
             },
             "description": "Authorized domains with no registered provider; consumers must show incomplete results."
+          },
+          "groups": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/CandidateGroup"
+            }
           }
         },
         "required": [
-          "items",
+          "groups",
           "next_cursor",
           "unavailable_domains"
         ]
@@ -484,6 +486,62 @@
         "required": [
           "items",
           "next_cursor"
+        ]
+      },
+      "Candidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "label": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "description": "Masked distinguishing fields only."
+          }
+        },
+        "required": [
+          "account",
+          "source",
+          "current",
+          "changed_at",
+          "scope",
+          "label"
+        ]
+      },
+      "CandidateGroup": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/Candidate"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            }
+          }
+        },
+        "required": [
+          "candidate",
+          "items"
         ]
       }
     },

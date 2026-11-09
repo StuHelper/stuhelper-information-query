@@ -17,11 +17,11 @@ import (
 
 // Defines values for FieldCategory.
 const (
-	FieldCategoryBusiness FieldCategory = "business"
-	FieldCategoryDocument FieldCategory = "document"
-	FieldCategoryIdentity FieldCategory = "identity"
-	FieldCategoryMaterial FieldCategory = "material"
-	FieldCategoryRefund   FieldCategory = "refund"
+	FieldCategoryBusiness    FieldCategory = "business"
+	FieldCategoryDocument    FieldCategory = "document"
+	FieldCategoryIdentity    FieldCategory = "identity"
+	FieldCategoryMaterial    FieldCategory = "material"
+	FieldCategoryRefundPayee FieldCategory = "refund_payee"
 )
 
 // Valid indicates whether the value is a known member of the FieldCategory enum.
@@ -35,7 +35,7 @@ func (e FieldCategory) Valid() bool {
 		return true
 	case FieldCategoryMaterial:
 		return true
-	case FieldCategoryRefund:
+	case FieldCategoryRefundPayee:
 		return true
 	default:
 		return false
@@ -77,10 +77,10 @@ func (e QueryDomains) Valid() bool {
 
 // Defines values for QueryFields.
 const (
-	QueryFieldsDocument QueryFields = "document"
-	QueryFieldsIdentity QueryFields = "identity"
-	QueryFieldsMaterial QueryFields = "material"
-	QueryFieldsRefund   QueryFields = "refund"
+	QueryFieldsDocument    QueryFields = "document"
+	QueryFieldsIdentity    QueryFields = "identity"
+	QueryFieldsMaterial    QueryFields = "material"
+	QueryFieldsRefundPayee QueryFields = "refund_payee"
 )
 
 // Valid indicates whether the value is a known member of the QueryFields enum.
@@ -92,7 +92,7 @@ func (e QueryFields) Valid() bool {
 		return true
 	case QueryFieldsMaterial:
 		return true
-	case QueryFieldsRefund:
+	case QueryFieldsRefundPayee:
 		return true
 	default:
 		return false
@@ -101,22 +101,22 @@ func (e QueryFields) Valid() bool {
 
 // Defines values for QueryKind.
 const (
-	Name          QueryKind = "name"
-	Qq            QueryKind = "qq"
-	StudentNumber QueryKind = "student_number"
-	Subject       QueryKind = "subject"
+	Account   QueryKind = "account"
+	Name      QueryKind = "name"
+	Qq        QueryKind = "qq"
+	StudentId QueryKind = "student_id"
 )
 
 // Valid indicates whether the value is a known member of the QueryKind enum.
 func (e QueryKind) Valid() bool {
 	switch e {
+	case Account:
+		return true
 	case Name:
 		return true
 	case Qq:
 		return true
-	case StudentNumber:
-		return true
-	case Subject:
+	case StudentId:
 		return true
 	default:
 		return false
@@ -155,6 +155,24 @@ type AuditPage struct {
 	NextCursor string  `json:"next_cursor"`
 }
 
+// Candidate defines model for Candidate.
+type Candidate struct {
+	Account   string    `json:"account"`
+	ChangedAt time.Time `json:"changed_at"`
+	Current   bool      `json:"current"`
+
+	// Label Masked distinguishing fields only.
+	Label  []Field `json:"label"`
+	Scope  Scope   `json:"scope"`
+	Source string  `json:"source"`
+}
+
+// CandidateGroup defines model for CandidateGroup.
+type CandidateGroup struct {
+	Candidate Candidate `json:"candidate"`
+	Items     []Record  `json:"items"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Code string `json:"code"`
@@ -173,17 +191,19 @@ type FieldCategory string
 
 // Query defines model for Query.
 type Query struct {
-	// After Exclusive lower bound: last globally unique <domain>:<id> from the previous page.
+	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation.
 	After   *string        `json:"after,omitempty"`
 	Domains []QueryDomains `json:"domains"`
 
 	// Fields Sensitive categories explicitly requested; omitted means masked identity fields only.
-	Fields  *[]QueryFields `json:"fields,omitempty"`
-	Kind    QueryKind      `json:"kind"`
-	Limit   int            `json:"limit"`
-	Purpose string         `json:"purpose"`
-	Scope   Scope          `json:"scope"`
-	Value   string         `json:"value"`
+	Fields *[]QueryFields `json:"fields,omitempty"`
+	Kind   QueryKind      `json:"kind"`
+
+	// Limit Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page.
+	Limit   int    `json:"limit"`
+	Purpose string `json:"purpose"`
+	Scope   Scope  `json:"scope"`
+	Value   string `json:"value"`
 }
 
 // QueryDomains defines model for Query.Domains.
@@ -208,8 +228,8 @@ type Record struct {
 
 // Result defines model for Result.
 type Result struct {
-	Items      []Record `json:"items"`
-	NextCursor string   `json:"next_cursor"`
+	Groups     []CandidateGroup `json:"groups"`
+	NextCursor string           `json:"next_cursor"`
 
 	// UnavailableDomains Authorized domains with no registered provider; consumers must show incomplete results.
 	UnavailableDomains []string `json:"unavailable_domains"`

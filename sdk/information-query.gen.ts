@@ -49,21 +49,22 @@ export interface components {
         };
         Query: {
             /** @enum {string} */
-            kind: "name" | "student_number" | "qq" | "subject";
+            kind: "name" | "student_id" | "qq" | "account";
             value: string;
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
             /** @description Sensitive categories explicitly requested; omitted means masked identity fields only. */
-            fields?: ("identity" | "document" | "material" | "refund")[];
+            fields?: ("identity" | "document" | "material" | "refund_payee")[];
             purpose: string;
+            /** @description Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page. */
             limit: number;
-            /** @description Exclusive lower bound: last globally unique <domain>:<id> from the previous page. */
+            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation. */
             after?: string;
         };
         Field: {
             name: string;
             /** @enum {string} */
-            category: "business" | "identity" | "document" | "material" | "refund";
+            category: "business" | "identity" | "document" | "material" | "refund_payee";
             value: string;
             masked: boolean;
         };
@@ -78,10 +79,10 @@ export interface components {
             fields: components["schemas"]["Field"][];
         };
         Result: {
-            items: components["schemas"]["Record"][];
             next_cursor: string;
             /** @description Authorized domains with no registered provider; consumers must show incomplete results. */
             unavailable_domains: string[];
+            groups: components["schemas"]["CandidateGroup"][];
         };
         Error: {
             code: string;
@@ -112,6 +113,20 @@ export interface components {
         AuditPage: {
             items: components["schemas"]["Audit"][];
             next_cursor: string;
+        };
+        Candidate: {
+            account: string;
+            source: string;
+            current: boolean;
+            /** Format: date-time */
+            changed_at: string;
+            scope: components["schemas"]["Scope"];
+            /** @description Masked distinguishing fields only. */
+            label: components["schemas"]["Field"][];
+        };
+        CandidateGroup: {
+            candidate: components["schemas"]["Candidate"];
+            items: components["schemas"]["Record"][];
         };
     };
     responses: never;

@@ -10,75 +10,75 @@ updated: 2026-11-09
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
-| POST | `/api/v1/information-query/query` | 按姓名、学校内学号、QQ 或内部账号线索分页查询 |
+| POST | `/api/v1/information-query/query` | 按线索解析候选，再按账号查询业务域 |
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
 
-请求字段以 OpenAPI 为准。每页最多 100 条，最多选择七个业务域。`after` 是上页最后一个业务记录 ID，所有 Provider 使用排他下界。满页返回游标，最后一页恰好满页时可能再返回一个空页。
+OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。student_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate 与 items，候选保留 account、source、current、changed_at、scope 和掩码 label。
 
-请求显式声明学校、群和业务模块范围。`*` 表示申请全范围，必须拥有覆盖该范围的授权。学号查询必须指定学校。多个学校的受限管理员应分别提交学校范围，不根据关联对象自动扩展权限。
+0.2.0 具有不兼容变化：subject 改为 account，student_number 改为 student_id，退款收款字段类别改为 refund_payee，平铺 items 改为 groups。消费者需重新生成 SDK，更新分组展示并清除旧游标。两个 HTTP 路径保持不变。
 
-结果保留内部对象 ID、学校和群范围、关联来源、变更时间和当前绑定标记。姓名相同的记录保持独立，历史解绑记录不标记为当前绑定。内部 ID 不得包含原始身份值。
+同名候选分开展示，同一账号的不同来源或历史绑定也保持独立。历史绑定 current=false，显示来源和变更时间。account 直接形成一个候选，source=account、current=true，changed_at 为请求时间，不作为绑定事实。
 
-未装配的已授权业务域列入 `unavailable_domains`。已装配 Provider 失败时返回 503。申请任何未授权域或敏感类别返回 403；响应不包含部分业务结果。已授权域可以单独查询。
+每页最多返回 100 条业务记录、50 个候选。after 是组合游标，绑定请求人和查询条件，保存候选位置与业务记录位置。游标只在来源事实稳定时保证排他连续性；续页重查授权，候选事实改变返回 503，调用方从首页重新查询。
 
-## 平台能力
+候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每次最多请求 700 条业务记录和 50 个候选，字段文本累计限制为 1 MiB。预算耗尽可以返回短页和 next_cursor，满页后的最后一次查询可能为空。客户端持续读取到 next_cursor 为空。
+
+已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
+
+## 端口与装配
+
+```go
+Resolve(ctx context.Context, principal account.Principal, lead Lead) ([]Candidate, string, error)
+Query(ctx context.Context, principal account.Principal, query Query) ([]Record, error)
+PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
+```
+
+Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。Account 是 issuer 与 subject 组成的完整账号键，不得以昵称、学号或 QQ 值代替。
+
+Service.Resolvers 按 kind 装配：name、student_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
+
+Resolver 的 Label 只含区分候选所需的掩码字段，不得把原始线索放入来源、账号键或游标。编排再次检查候选范围、掩码和字段大小。候选披露之前检查所有申请域的权限，并在返回前提交审计。
+
+Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整账号键，先授权、按范围过滤，再按 ID 升序分页。After 是排他记录 ID，Limit 上限 100。记录 ID 使用 `<domain>:<id>`，Subject 必须与查询账号一致。
+
+提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
+
+用迁移身份执行 postgres.Repository.Migrate，包含已有审计时间回填与时间索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE。把运行身份连接池注入 Repository，再注入 Service.Repo。
+
+Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
+
+HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。查询整体限时 10 秒，审计提交独立限时 3 秒。依赖须遵守 context；原始线索、正文和敏感结果不得进入日志。
+
+## 权限与审计
 
 | 能力 | 用途 |
 | --- | --- |
-| `information-query.<domain>.read` | 查询指定业务域，domain 为七个可选模块之一 |
-| `information-query.identity.read` | 查看完整姓名、学号、手机号、QQ |
-| `information-query.document.read` | 查看证件号码 |
-| `information-query.material.read` | 查看认证原始材料 |
-| `information-query.refund.read` | 查看退款收款资料 |
-| `information-query.bot` | 允许机器人查询 |
-| `information-query.audit.read` | 查询本模块审计 |
+| `information-query.<domain>.read` | 查询 profiles、verification、catalog、reviews、resources、billing、groups |
+| `information-query.identity.read` | 完整身份字段 |
+| `information-query.document.read` | 证件号码 |
+| `information-query.material.read` | 认证原始材料 |
+| `information-query.refund.read` | refund_payee 类别的退款收款资料 |
+| `information-query.bot` | 机器人查询 |
+| `information-query.audit.read` | 审计查询 |
 
-业务域和敏感能力均传入 `admin.Service.Evaluate`，携带当前请求人及真实对象范围。平台管理员的全部能力由平台可信身份判断提供。普通群管理员没有隐含财务、认证或敏感字段能力。
+各域 Provider 独立执行授权，内容或群管理权限不能取得财务记录。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。
 
-未申请完整身份类别时返回固定掩码 `***`。未申请证件、材料或退款收款类别时省略字段。Provider 同时执行所属模块的授权，必须准确标记字段类别，不能通过业务字段或来源字符串携带敏感值。
+每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。群聊记录目标群。候选与敏感结果在审计写入成功后返回，写入失败返回 503。
 
-## Backend 装配步骤
+## 审计保留与维护
 
-1. 将本模块源码固定到 backend 的依赖组合，登记可选 Provider。此任务不修改 backend 的 go.mod、go.sum 或工作区锁文件。
-2. 用迁移身份执行 `postgres.Repository.Migrate`。运行身份仅授予 information_query schema 的 USAGE、audit 表的 SELECT/INSERT 和 audit_id_seq 的 USAGE。
-3. 用运行身份建立 `pgxpool.Pool`，创建 `postgres.Repository`。把当前平台 `admin.Service` 注入 `Service.Auth`，把仓库注入 `Service.Repo`。
-4. 按业务域向 `Service.Providers` 注册公开接口适配器。配置在启动后保持不可变，网络适配器必须遵守 context 的超时与取消。
-5. 挂载 `httpapi.Handler`。可信认证中间件生成 Principal、请求 ID 和 Delivery，不能从客户端提交的角色、身份或渠道头直接构造。
-6. 机器人适配器从已验证的发信账号和会话构造 Delivery。显式开启 BotEnabled 后仍检查机器人能力。群聊直接把获准结果回到原群，并向使用者说明群成员可以看到回复。
-7. 进程停止时关闭连接池。业务依赖和审计库不可用时不得返回敏感结果。backend 应提供对应就绪状态及脱敏故障指标。
+postgres.Maintenance 使用单独连接池，仅授予 schema USAGE 和 audit SELECT/DELETE。维护身份不能 INSERT/UPDATE，运行身份不能 DELETE/UPDATE。维护接口不挂载 HTTP，也不放入运行 Repository 接口。
 
-HTTP 仅接受 POST，限制请求体 16 KiB，拒绝未知字段和尾随 JSON。响应设置 `Cache-Control: no-store`。查询整体限时 10 秒，审计提交使用独立的 3 秒期限。原始请求体、查询线索和结果正文不得写入日志。
+RetentionMonths=0 时默认保留 12 个自然月，可由维护进程配置为 1 至 1200 个月。截止时间按 UTC 当前时间 AddDate(0,-months,0) 计算。before 必须不晚于保留截止时间，清理严格早于 before 的记录，边界记录保留。
 
-## Provider 接口要求与现有缺口
+PruneAudit 每次 limit 为 1 至 1000，按 created_at、id 稳定选择并在单条 SQL 中删除，返回实际删除数。超时为 3 秒；失败不产生部分提交，可重试。维护任务应监控积压、失败与最早到期时间，分批执行并限制调度次数。
 
-`Provider.Query(ctx, principal, query)` 返回所属模块的 Record。必须先按请求人的当前权限、真实学校和群范围过滤，再按全局唯一的 `<domain>:<id>` 排序分页。模块最多返回请求的 limit 条记录，并执行字段授权。
+争议保留的逐对象排除尚未实现。有保留义务时，维护人暂停相关清理或使用覆盖保留范围的更早 before；不能直接用默认截止时间清理争议数据。恢复后开放服务前须重新执行到期规则，恢复演练仍待验证。
 
-返回记录再次经信息查询服务核验范围、能力及字段类别。每次聚合限制为 1 MiB 字段文本，超限返回 503。该上限不替代 Provider 对远程响应大小、数据库查询次数及处理量的限制。
+## 验证与剩余工作
 
-| 模块 | 当前可复用接口 | 所需补充 |
-| --- | --- | --- |
-| profiles | `Get`、`Public` | 按姓名、学号、QQ 查询候选内部账号，携带真实范围、关联来源与历史绑定 |
-| verification | `AdminCredential`、`StudentProfile`、`PublicProfileFacts` | 管理员按线索和目标账号分页读取学籍、学习经历、实名结论，并独立授权证件与材料 |
-| catalog | `AdminRead`、`AdminList`、`AdminLookup` | 从账号公开关联事实取得学校、课程及导师 ID，按实际授权范围组成记录 |
-| reviews | `AdminGet`、`AdminList` | 按目标作者分页查询评价，保留原模块的身份披露规则 |
-| resources | `Get`、`List` | 按目标账号查询资料和解锁记录，并提供明确的学校和群范围 |
-| billing | `AdminAccount`、`AdminRefunds` | 对接当前平台能力，取得目标的真实学校和群范围，独立屏蔽退款收款字段 |
-| groups | 本轮独立实施中 | 提供成员资格、入群认证和群管理记录的分页查询及范围信息 |
+module.yaml 登记 IQ-01 至 IQ-08 及实现补充场景 IQ-09（解析故障与隔离）、IQ-10（组合分页及预算）、IQ-11（保留与维护权限）。测试覆盖三类线索、同名分离、历史绑定、跨域授权、候选变更、账号隔离和分页不重不漏。
 
-profiles 当前不拥有完整 QQ 历史绑定事实。QQ 关联适配器必须向实际拥有绑定数据的模块调用公开接口，或由 profiles 提供组合接口，不能读取绑定表或以展示昵称推断账号归属。
+隔离 PostgreSQL 测试覆盖迁移回填与重放、并发审计写入、敏感响应提交要求、有界删除、截止时间边界、重复清理、维护身份与运行身份的权限分离。2026-11-09 已通过 GOWORK=off、隔离 PostgreSQL 18.6 完整检查：生成一致性、repository、docs、场景登记、gofmt、vet、race、build 和 workflows。
 
-当前没有生产 Provider 实现，不使用演示记录兜底。端到端业务联调须等待以上接口与 backend 装配。若后续采用查询投影，必须按 EVENT-DELIVERY.md 通过 outbox、relay 和 inbox 构建，并处理重复、旧修订和乱序事件。
-
-## 审计与验证
-
-每次业务查询、拒绝和审计查询保存操作者、请求 ID、用途、申请范围、字段类别、所需能力、目标内部标识、时间、结果数量、结果码和投递渠道。群聊记录实际目标群。日志和审计均不复制查询值或敏感字段正文。
-
-审计写入完成后才返回查询结果，写入失败返回 503。运行身份不能更新或删除审计，也不能读取其他模块表。多域查询的审计范围采用请求的整体范围，因此查看该审计需要覆盖整体范围的审计授权。
-
-IQ-01 至 IQ-08 对应的服务测试登记在 module.yaml。测试覆盖姓名候选分离、范围外拒绝、业务域隔离、独立敏感权限、机器人默认关闭、权限撤销、审计失败和渠道记录。平台管理员测试使用真实 admin.Service.Evaluate。
-
-隔离 PostgreSQL 测试验证迁移重复执行、并发审计写入、分页、学校范围过滤，以及运行身份的允许权限和越界拒绝。HTTP 测试验证伪造身份字段、超长正文及尾随 JSON 被拒绝。
-
-待完成：真实 Provider 与 backend 联调、批量查询和导出权限及预览、导出文件有效期与下载再授权、审计默认 12 个月保留期的清理及争议保留。当前 HTTP 接口不开放批量或导出能力。
-
-2026-11-09 本地完整检查通过：Go 1.27.3、GOWORK=off、隔离 PostgreSQL 18.6，执行生成一致性、repository、docs、模块场景登记、gofmt、go vet、race 测试、build 和 workflows。另用数据库只读事务验证敏感结果在审计提交失败时被丢弃。尚无远程 CI 或真实账号验收结果。
+待完成：真实 Resolver/Provider 与 backend 联调，消费者 0.2.0 升级及实际组合验证，批量预览和导出，争议保留自动排除，恢复演练。未执行真实账号验收、发行或部署。
