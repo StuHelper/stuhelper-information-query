@@ -1,5 +1,5 @@
-github.com/StuHelper/stuhelper-platform v0.0.0-20261108152919-0efdba00ff59 h1:PglbZJKhOPjixS8c2QdQnWVo4FzSJY5Lsj1z42lz2Gg=
-github.com/StuHelper/stuhelper-platform v0.0.0-20261108152919-0efdba00ff59/go.mod h1:+VhqNi6LAC5dhGqijsazjex+4UcmrxNYbVwKzJcfNk8=
+github.com/StuHelper/stuhelper-platform v0.2.0 h1:72beO5OEn5JftA+5BnENR8BHFALLmtX6i8Or7u1CzaU=
+github.com/StuHelper/stuhelper-platform v0.2.0/go.mod h1:+VhqNi6LAC5dhGqijsazjex+4UcmrxNYbVwKzJcfNk8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
