@@ -21,6 +21,6 @@ bash scripts/check-with-postgres.sh
 
 数据库脚本创建仅监听独立 Unix socket 的临时 PostgreSQL 集群，退出时清理。可用 `STUHELPER_TEST_PG_BIN` 指定 PostgreSQL 二进制目录。`make check` 要求设置隔离测试库 DSN，执行生成一致性、工程检查、文档、架构边界、race 测试、构建和工作流检查。
 
-`GOWORK=off` 独立构建。平台依赖固定为 `0efdba00ff59cddc9d7894092aace9b9212696f0`。不修改 backend 或工作区锁文件。
+`GOWORK=off` 独立构建。平台依赖固定为 `stuhelper-platform v0.2.0`。不修改 backend 或工作区锁文件。
 
 项目使用 AGPL-3.0-only。
