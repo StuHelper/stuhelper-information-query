@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 )
 
@@ -215,5 +216,66 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 	var kept int
 	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE created_at=$1 OR created_at=$2`, cutoff, cutoff.Add(time.Second)).Scan(&kept); e != nil || kept != 2 {
 		t.Fatal("boundary removed", kept, e)
+	}
+}
+
+func TestTransactionalVersionedMigrationsAndRollback(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+
+	if err := (postgres.Repository{}).Migrate(ctx); err != iq.ErrUnavailable {
+		t.Fatalf("expected ErrUnavailable on nil pool, got %v", err)
+	}
+
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	var firstApplied time.Time
+	if e = pool.QueryRow(ctx, `SELECT applied_at FROM information_query.schema_migrations WHERE version='001_audit.sql'`).Scan(&firstApplied); e != nil {
+		t.Fatalf("001_audit.sql not recorded in schema_migrations: %v", e)
+	}
+
+	// Non-idempotent migration runs once and is skipped on subsequent MigrateFS calls.
+	customFS := fstest.MapFS{
+		"migrations/090_once_only.sql": &fstest.MapFile{
+			Data: []byte(`CREATE TABLE information_query.migration_probe (id int PRIMARY KEY); REVOKE ALL ON information_query.migration_probe FROM PUBLIC;`),
+		},
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DROP TABLE IF EXISTS information_query.migration_probe; DELETE FROM information_query.schema_migrations WHERE version IN ('090_once_only.sql', '091_broken.sql');`)
+	})
+	if e = postgres.MigrateFS(ctx, pool, customFS, "migrations"); e != nil {
+		t.Fatal(e)
+	}
+	// Second run would fail if 090_once_only.sql (without IF NOT EXISTS) were re-executed.
+	if e = postgres.MigrateFS(ctx, pool, customFS, "migrations"); e != nil {
+		t.Fatalf("expected recorded migration to be skipped on replay, got %v", e)
+	}
+
+	// Failing multi-statement script rolls back earlier DDL in the same script and records nothing.
+	brokenFS := fstest.MapFS{
+		"migrations/090_once_only.sql": customFS["migrations/090_once_only.sql"],
+		"migrations/091_broken.sql": &fstest.MapFile{
+			Data: []byte(`CREATE TABLE information_query.partial_should_rollback (id int); SELECT * FROM information_query.nonexistent_syntax_fail;`),
+		},
+	}
+	if e = postgres.MigrateFS(ctx, pool, brokenFS, "migrations"); e == nil {
+		t.Fatal("expected broken migration to fail")
+	}
+	var exists bool
+	if e = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='information_query' AND table_name='partial_should_rollback')`).Scan(&exists); e != nil || exists {
+		t.Fatalf("partial DDL from failed migration was not rolled back: exists=%v err=%v", exists, e)
+	}
+	if e = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_query.schema_migrations WHERE version='091_broken.sql')`).Scan(&exists); e != nil || exists {
+		t.Fatalf("failed migration version must not be recorded: exists=%v err=%v", exists, e)
 	}
 }

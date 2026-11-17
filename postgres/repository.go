@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"io/fs"
+	"slices"
 	"strconv"
+	"strings"
 )
 
 //go:embed migrations/*.sql
@@ -17,16 +20,82 @@ type Repository struct{ Pool *pgxpool.Pool }
 
 // Migrate must run with a separate migration identity.
 func (r Repository) Migrate(ctx context.Context) error {
-	entries, err := migrations.ReadDir("migrations")
+	return migrateFromFS(ctx, r.Pool, migrations, "migrations")
+}
+
+// MigrateFS applies ordered SQL migrations from dir, recording each version in
+// information_query.schema_migrations inside its own database transaction.
+func MigrateFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.ReadDirFS, dir string) error {
+	return migrateFromFS(ctx, pool, fsys, dir)
+}
+
+func migrateFromFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.ReadDirFS, dir string) error {
+	if pool == nil {
+		return iq.ErrUnavailable
+	}
+	entries, err := fsys.ReadDir(dir)
 	if err != nil {
 		return err
 	}
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+	bootTx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err = bootTx.Exec(ctx, `
+SELECT pg_advisory_xact_lock(hashtext('information_query.schema_migrations'));
+CREATE SCHEMA IF NOT EXISTS information_query;
+REVOKE ALL ON SCHEMA information_query FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS information_query.schema_migrations (
+ version text PRIMARY KEY,
+ applied_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+REVOKE ALL ON information_query.schema_migrations FROM PUBLIC;
+`); err != nil {
+		_ = bootTx.Rollback(ctx)
+		return err
+	}
+	if err = bootTx.Commit(ctx); err != nil {
+		return err
+	}
+
 	for _, entry := range entries {
-		b, err := migrations.ReadFile("migrations/" + entry.Name())
-		if err != nil {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version := entry.Name()
+		b, readErr := fs.ReadFile(fsys, dir+"/"+version)
+		if readErr != nil {
+			return readErr
+		}
+		tx, txErr := pool.Begin(ctx)
+		if txErr != nil {
+			return txErr
+		}
+		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('information_query.schema_migrations'))`); err != nil {
+			_ = tx.Rollback(ctx)
 			return err
 		}
-		if _, err = r.Pool.Exec(ctx, string(b)); err != nil {
+		var applied bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_query.schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+		if applied {
+			_ = tx.Rollback(ctx)
+			continue
+		}
+		if _, err = tx.Exec(ctx, string(b)); err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO information_query.schema_migrations(version) VALUES($1)`, version); err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+		if err = tx.Commit(ctx); err != nil {
 			return err
 		}
 	}

@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -21,7 +21,9 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 
 每页最多返回 100 条业务记录、50 个候选。after 是组合游标，绑定请求人和查询条件，保存候选位置与业务记录位置。游标只在来源事实稳定时保证排他连续性；续页重查授权，候选事实改变返回 503，调用方从首页重新查询。
 
-候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每次最多请求 700 条业务记录和 50 个候选，字段文本累计限制为 1 MiB。预算耗尽可以返回短页和 next_cursor，满页后的最后一次查询可能为空。客户端持续读取到 next_cursor 为空。
+候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每次最多请求 700 条业务记录和 50 个候选，字段文本累计限制为 1 MiB。
+
+预算耗尽时可以返回短页和 next_cursor。若上一页恰好读完某候选的全部记录，续页可能返回空 groups 或带空 items 的候选分组，客户端持续读取至 next_cursor 为空才结束。
 
 已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
 
@@ -43,7 +45,9 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
 
-用迁移身份执行 postgres.Repository.Migrate。001_audit.sql 直接定义最终审计表，created_at 非空且默认取当前时间，并建立保留清理索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE。把运行身份连接池注入 Repository，再注入 Service.Repo。
+用迁移身份执行 postgres.Repository.Migrate。迁移在 information_query.schema_migrations 记录已执行版本，每个未执行脚本都在独立事务内原子执行。
+
+001_audit.sql 定义审计表与保留清理索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT 和 audit_id_seq 的 USAGE，把运行身份连接池注入 Repository 后交给 Service.Repo。
 
 Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
 
@@ -64,6 +68,8 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 各域 Provider 独立执行授权，内容或群管理权限不能取得财务记录。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。
 
 每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。群聊记录目标群。候选与敏感结果在审计写入成功后返回，写入失败返回 503。
+
+AuditFilter.purpose 记录管理员本次查阅审计日志的事由并写入对应的 audit.query 审计行，不作为历史审计记录的 SQL 过滤条件。审计读取仅按 Scope、游标与分页参数执行。
 
 ## 审计保留与维护
 
