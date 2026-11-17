@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -11,6 +11,7 @@ updated: 2026-11-09
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
 | POST | `/api/v1/information-query/query` | 按线索解析候选，再按账号查询业务域 |
+| POST | `/api/v1/information-query/preview` | 管理端有界批量线索掩码与计数预览（禁止展开敏感字段） |
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
 
 OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。student_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate 与 items，候选保留 account、source、current、changed_at、scope 和掩码 label。
@@ -24,6 +25,8 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每次最多请求 700 条业务记录和 50 个候选，字段文本累计限制为 1 MiB。预算耗尽可以返回短页和 next_cursor，满页后的最后一次查询可能为空。客户端持续读取到 next_cursor 为空。
 
 已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
+
+批量预览每次最多接收 20 条同类型唯一线索，仅开放给 admin 渠道且要求独立能力 `information-query.batch.read`。接口不接受 fields 参数，仅在审计提交成功后返回候选状态与每域最多 20 条的脱敏计数摘要，不回显原始线索或业务字段值。
 
 ## 端口与装配
 
@@ -59,6 +62,7 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 | `information-query.material.read` | 认证原始材料 |
 | `information-query.refund.read` | refund_payee 类别的退款收款资料 |
 | `information-query.bot` | 机器人查询 |
+| `information-query.batch.read` | 管理端有界批量线索预览 |
 | `information-query.audit.read` | 审计查询 |
 
 各域 Provider 独立执行授权，内容或群管理权限不能取得财务记录。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。
@@ -81,4 +85,4 @@ module.yaml 登记 IQ-01 至 IQ-08 及实现补充场景 IQ-09（解析故障与
 
 隔离 PostgreSQL 测试覆盖建表与重复执行、并发审计写入、敏感响应提交要求、有界删除、截止时间边界、重复清理、维护身份与运行身份的权限分离。2026-11-09 已通过 GOWORK=off、隔离 PostgreSQL 18.6 完整检查：生成一致性、repository、docs、场景登记、gofmt、vet、race、build 和 workflows。
 
-待完成：真实 Resolver/Provider 与 backend 联调，消费者 0.2.0 升级及实际组合验证，批量预览和导出，争议保留自动排除，恢复演练。未执行真实账号验收、发行或部署。
+待完成：真实 Resolver/Provider 与 backend 联调，消费者 0.2.0 升级及实际组合验证，导出文件，争议保留自动排除，恢复演练。未执行真实账号验收、发行或部署。

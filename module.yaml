@@ -40,6 +40,8 @@ scenario_tests:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
     - service_test.go#TestSensitiveMaskAuditAndFailure
+    - preview_test.go#TestBoundedBatchPreviewAuthorizationMaskingAndAudit
+    - httpapi/handler_test.go#TestBatchPreviewHTTPRejectsSensitiveFieldsAndSupportsSDK
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
   IQ-07:
     - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit

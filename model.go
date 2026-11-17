@@ -132,3 +132,40 @@ type Resolver interface {
 type AuditPruner interface {
 	PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 }
+
+// BatchQuery requests bounded masked candidate and domain count previews for up to 20 leads.
+// Sensitive field categories cannot be requested in batch mode.
+type BatchQuery struct {
+	Kind    string      `json:"kind"`
+	Values  []string    `json:"values"`
+	Scope   admin.Scope `json:"scope"`
+	Domains []string    `json:"domains"`
+	Purpose string      `json:"purpose"`
+}
+
+func (BatchQuery) String() string     { return "informationquery.BatchQuery{redacted}" }
+func (q BatchQuery) GoString() string { return q.String() }
+
+type DomainSummary struct {
+	Domain       string `json:"domain"`
+	Count        int    `json:"count"`
+	CurrentCount int    `json:"current_count"`
+	HasMore      bool   `json:"has_more"`
+}
+
+type CandidatePreview struct {
+	Candidate    Candidate       `json:"candidate"`
+	DomainCounts []DomainSummary `json:"domain_counts"`
+}
+
+type BatchPreviewEntry struct {
+	Index             int                `json:"index"`
+	Candidates        []CandidatePreview `json:"candidates"`
+	HasMoreCandidates bool               `json:"has_more_candidates"`
+}
+
+type BatchPreviewResult struct {
+	Entries            []BatchPreviewEntry `json:"entries"`
+	UnavailableDomains []string            `json:"unavailable_domains"`
+	Truncated          bool                `json:"truncated"`
+}

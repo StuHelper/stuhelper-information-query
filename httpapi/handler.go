@@ -49,6 +49,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			out, err = h.Service.Query(r.Context(), p, id, d, q)
 		}
+	case "/api/v1/information-query/preview":
+		var q iq.BatchQuery
+		err = decode(w, r, &q)
+		if err == nil {
+			out, err = h.Service.Preview(r.Context(), p, id, d, q)
+		}
 	case "/api/v1/information-query/audit/query":
 		var q iq.AuditFilter
 		err = decode(w, r, &q)
