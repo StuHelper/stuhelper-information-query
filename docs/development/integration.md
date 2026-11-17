@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -73,7 +73,7 @@ RetentionMonths=0 时默认保留 12 个自然月，可由维护进程配置为 
 
 PruneAudit 每次 limit 为 1 至 1000，按 created_at、id 稳定选择并在单条 SQL 中删除，返回实际删除数。超时为 3 秒；失败不产生部分提交，可重试。维护任务应监控积压、失败与最早到期时间，分批执行并限制调度次数。
 
-争议保留的逐对象排除尚未实现。有保留义务时，维护人暂停相关清理或使用覆盖保留范围的更早 before；不能直接用默认截止时间清理争议数据。恢复后开放服务前须重新执行到期规则，恢复演练仍待验证。
+争议保留通过 information_query.audit_holds 与 postgres.HoldStore 管理，支持按 audit_id、request_id 或 target_account 登记保留依据与复核日期。PruneAudit 自动排除未释放的保留记录，释放后纳入常规到期清理；恢复演练仍待验证。
 
 ## 验证与剩余工作
 
@@ -81,4 +81,4 @@ module.yaml 登记 IQ-01 至 IQ-08 及实现补充场景 IQ-09（解析故障与
 
 隔离 PostgreSQL 测试覆盖建表与重复执行、并发审计写入、敏感响应提交要求、有界删除、截止时间边界、重复清理、维护身份与运行身份的权限分离。2026-11-09 已通过 GOWORK=off、隔离 PostgreSQL 18.6 完整检查：生成一致性、repository、docs、场景登记、gofmt、vet、race、build 和 workflows。
 
-待完成：真实 Resolver/Provider 与 backend 联调，消费者 0.2.0 升级及实际组合验证，批量预览和导出，争议保留自动排除，恢复演练。未执行真实账号验收、发行或部署。
+待完成：真实 Resolver/Provider 与 backend 联调，消费者 0.2.0 升级及实际组合验证，批量预览和导出，恢复演练。未执行真实账号验收、发行或部署。

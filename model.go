@@ -132,3 +132,39 @@ type Resolver interface {
 type AuditPruner interface {
 	PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 }
+
+type AuditHold struct {
+	ID            string     `json:"id"`
+	AuditID       string     `json:"audit_id,omitempty"`
+	RequestID     string     `json:"request_id,omitempty"`
+	TargetAccount string     `json:"target_account,omitempty"`
+	Reason        string     `json:"reason"`
+	CreatedBy     string     `json:"created_by"`
+	ReviewAt      time.Time  `json:"review_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ReleasedAt    *time.Time `json:"released_at,omitempty"`
+	ReleasedBy    string     `json:"released_by,omitempty"`
+	ReleaseReason string     `json:"release_reason,omitempty"`
+}
+
+type AuditHoldInput struct {
+	AuditID       string
+	RequestID     string
+	TargetAccount string
+	Reason        string
+	CreatedBy     string
+	ReviewAt      time.Time
+}
+
+type AuditHoldRelease struct {
+	ID     string
+	Actor  string
+	Reason string
+}
+
+// AuditHoldManager records and releases per-object legal holds under a dedicated governance role.
+type AuditHoldManager interface {
+	CreateHold(ctx context.Context, in AuditHoldInput) (AuditHold, error)
+	ReleaseHold(ctx context.Context, in AuditHoldRelease) (AuditHold, error)
+	ListActiveHolds(ctx context.Context, after string, limit int) ([]AuditHold, string, error)
+}

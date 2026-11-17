@@ -16,6 +16,9 @@ type Maintenance struct {
 }
 
 func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int) (int, error) {
+	if m.Pool == nil {
+		return 0, iq.ErrUnavailable
+	}
 	months := m.RetentionMonths
 	if months == 0 {
 		months = 12
@@ -33,7 +36,14 @@ func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	result, err := m.Pool.Exec(ctx, `WITH expired AS (
- SELECT id FROM information_query.audit WHERE created_at < $1 ORDER BY created_at,id LIMIT $2
+ SELECT a.id FROM information_query.audit a
+ WHERE a.created_at < $1
+   AND NOT information_query.audit_is_held(
+    a.id,
+    COALESCE(a.body->>'request_id',''),
+    CASE WHEN jsonb_typeof(a.body->'targets')='array' THEN a.body->'targets' ELSE '[]'::jsonb END
+   )
+ ORDER BY a.created_at,a.id LIMIT $2
  ) DELETE FROM information_query.audit a USING expired e WHERE a.id=e.id`, before, limit)
 	if err != nil {
 		return 0, err

@@ -217,3 +217,146 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 		t.Fatal("boundary removed", kept, e)
 	}
 }
+
+func TestAuditLegalHoldExclusionReleaseAndRoleIsolation(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	now := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	cutoff := now.AddDate(-1, 0, 0)
+	expiredAt := cutoff.Add(-time.Hour)
+	holdSchool := "hold-school"
+
+	// Insert 4 expired audit rows: one matched by audit_id, one by request_id, one by target_account, one unheld.
+	var heldAuditID string
+	var rawID int64
+	body1, _ := json.Marshal(iq.Audit{Actor: "issuer:op", RequestID: "req-by-id", Purpose: "p1", Scope: admin.Scope{School: holdSchool, Group: "*", Module: "profiles"}, Targets: []string{"issuer:u1"}, Fields: []string{}, Basis: []string{}, CreatedAt: expiredAt})
+	if e = pool.QueryRow(ctx, `INSERT INTO information_query.audit(school,group_id,module,body,created_at) VALUES($1,'*','profiles',$2,$3) RETURNING id`, holdSchool, body1, expiredAt).Scan(&rawID); e != nil {
+		t.Fatal(e)
+	}
+	heldAuditID = jsonNumberString(rawID)
+	for _, a := range []iq.Audit{
+		{Actor: "issuer:op", RequestID: "req-held-2", Purpose: "p2", Scope: admin.Scope{School: holdSchool, Group: "*", Module: "profiles"}, Targets: []string{"issuer:u2"}, Fields: []string{}, Basis: []string{}, CreatedAt: expiredAt},
+		{Actor: "issuer:op", RequestID: "req-3", Purpose: "p3", Scope: admin.Scope{School: holdSchool, Group: "*", Module: "profiles"}, Targets: []string{"issuer:held-target"}, Fields: []string{}, Basis: []string{}, CreatedAt: expiredAt},
+		{Actor: "issuer:op", RequestID: "req-unheld", Purpose: "p4", Scope: admin.Scope{School: holdSchool, Group: "*", Module: "profiles"}, Targets: []string{"issuer:normal"}, Fields: []string{}, Basis: []string{}, CreatedAt: expiredAt},
+	} {
+		if e = r.Append(ctx, a); e != nil {
+			t.Fatal(e)
+		}
+	}
+
+	_, e = pool.Exec(ctx, `
+CREATE ROLE iq_hold_governance NOLOGIN;
+GRANT USAGE ON SCHEMA information_query TO iq_hold_governance;
+GRANT SELECT,INSERT,UPDATE ON information_query.audit_holds TO iq_hold_governance;
+GRANT USAGE ON SEQUENCE information_query.audit_holds_id_seq TO iq_hold_governance;
+CREATE ROLE iq_hold_maint NOLOGIN;
+GRANT USAGE ON SCHEMA information_query TO iq_hold_maint;
+GRANT SELECT,DELETE ON information_query.audit TO iq_hold_maint;
+`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	makePool := func(role string) *pgxpool.Pool {
+		cfg, err := pgxpool.ParseConfig(dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.ConnConfig.RuntimeParams["role"] = role
+		p, err := pgxpool.NewWithConfig(ctx, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Close)
+		return p
+	}
+	govPool := makePool("iq_hold_governance")
+	maintPool := makePool("iq_hold_maint")
+
+	// Role isolation checks: maintenance cannot read/modify audit_holds; governance cannot delete holds or touch audit.
+	if _, e = maintPool.Exec(ctx, `SELECT * FROM information_query.audit_holds`); e == nil {
+		t.Fatal("maintenance role should not read audit_holds directly")
+	}
+	if _, e = govPool.Exec(ctx, `DELETE FROM information_query.audit_holds`); e == nil {
+		t.Fatal("governance role must not delete audit_holds")
+	}
+	if _, e = govPool.Exec(ctx, `SELECT * FROM information_query.audit`); e == nil {
+		t.Fatal("governance role must not read audit table")
+	}
+
+	currentTime := now
+	holds := postgres.HoldStore{Pool: govPool, Now: func() time.Time { return currentTime }}
+	if _, e = holds.CreateHold(ctx, iq.AuditHoldInput{Reason: "missing selector", CreatedBy: "issuer:gov", ReviewAt: now.Add(24 * time.Hour)}); e != iq.ErrInvalid {
+		t.Fatalf("expected ErrInvalid for empty selector, got %v", e)
+	}
+
+	h1, e := holds.CreateHold(ctx, iq.AuditHoldInput{AuditID: heldAuditID, Reason: "退费争议调查", CreatedBy: "issuer:gov", ReviewAt: now.Add(24 * time.Hour)})
+	if e != nil {
+		t.Fatal(e)
+	}
+	h2, e := holds.CreateHold(ctx, iq.AuditHoldInput{RequestID: "req-held-2", Reason: "申诉核查", CreatedBy: "issuer:gov", ReviewAt: now.Add(24 * time.Hour)})
+	if e != nil {
+		t.Fatal(e)
+	}
+	h3, e := holds.CreateHold(ctx, iq.AuditHoldInput{TargetAccount: "issuer:held-target", Reason: "涉诉账号保全", CreatedBy: "issuer:gov", ReviewAt: now.Add(24 * time.Hour)})
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	active, next, e := holds.ListActiveHolds(ctx, "", 2)
+	if e != nil || len(active) != 2 || next == "" {
+		t.Fatalf("unexpected active holds page 1: %+v next=%q err=%v", active, next, e)
+	}
+	active2, next2, e := holds.ListActiveHolds(ctx, next, 10)
+	if e != nil || len(active2) != 1 || next2 != "" {
+		t.Fatalf("unexpected active holds page 2: %+v next=%q err=%v", active2, next2, e)
+	}
+
+	// Advance time past review_at without releasing: holds must still protect records from automatic deletion.
+	currentTime = now.Add(48 * time.Hour)
+	maint := postgres.Maintenance{Pool: maintPool, Now: func() time.Time { return currentTime }}
+	deleted, e := maint.PruneAudit(ctx, cutoff, 100)
+	if e != nil || deleted != 1 {
+		t.Fatalf("expected only 1 unheld expired audit row deleted, got deleted=%d err=%v", deleted, e)
+	}
+	var remaining int
+	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE school=$1`, holdSchool).Scan(&remaining); e != nil || remaining != 3 {
+		t.Fatalf("expected 3 held rows preserved, got %d err=%v", remaining, e)
+	}
+
+	// Release holds (including idempotent replay check) and verify subsequent PruneAudit cleans them up.
+	released1, e := holds.ReleaseHold(ctx, iq.AuditHoldRelease{ID: h1.ID, Actor: "issuer:gov-1", Reason: "结案解除"})
+	if e != nil || released1.ReleasedAt == nil || released1.ReleasedBy != "issuer:gov-1" {
+		t.Fatalf("release failed: %+v %v", released1, e)
+	}
+	currentTime = currentTime.Add(time.Hour)
+	replay1, e := holds.ReleaseHold(ctx, iq.AuditHoldRelease{ID: h1.ID, Actor: "issuer:gov-2", Reason: "重复请求"})
+	if e != nil || replay1.ReleasedBy != "issuer:gov-1" || !replay1.ReleasedAt.Equal(*released1.ReleasedAt) {
+		t.Fatalf("release replay overwrote original release metadata: %+v %v", replay1, e)
+	}
+	for _, id := range []string{h2.ID, h3.ID} {
+		if _, e = holds.ReleaseHold(ctx, iq.AuditHoldRelease{ID: id, Actor: "issuer:gov-1", Reason: "全部结案"}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	deleted, e = maint.PruneAudit(ctx, cutoff, 100)
+	if e != nil || deleted != 3 {
+		t.Fatalf("expected 3 released rows pruned, got %d err=%v", deleted, e)
+	}
+}
+
+func jsonNumberString(v int64) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
