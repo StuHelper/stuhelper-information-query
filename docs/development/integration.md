@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -24,6 +24,8 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每次最多请求 700 条业务记录和 50 个候选，字段文本累计限制为 1 MiB。预算耗尽可以返回短页和 next_cursor，满页后的最后一次查询可能为空。客户端持续读取到 next_cursor 为空。
 
 已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
+
+失败响应保留 code，并通过可选 reason、domain、field 返回细分机器码（如 school_required、candidate_changed、domain_forbidden、field_forbidden）与受阻枚举标识，从不回显原始查询值。
 
 ## 端口与装配
 

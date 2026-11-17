@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-information-query/postgres"
 	"github.com/StuHelper/stuhelper-platform/account"
@@ -108,7 +109,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	s := iq.Service{Auth: allow{}, Repo: r, Providers: map[string]iq.Provider{"profiles": records{}}}
 	q := iq.Query{Kind: "account", Value: "user-1", Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
 	out, e := s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "disclosure-request", iq.Delivery{Channel: "bot_group", Group: "g"}, q)
-	if e != iq.ErrForbidden || recordCount(out) != 0 {
+	if !errors.Is(e, iq.ErrForbidden) || recordCount(out) != 0 {
 		t.Fatal("bot default", e)
 	}
 	s.BotEnabled = true
@@ -135,7 +136,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	defer readOnly.Close()
 	s.Repo = postgres.Repository{Pool: readOnly}
 	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "blocked", iq.Delivery{Channel: "admin"}, q)
-	if e != iq.ErrUnavailable || recordCount(out) != 0 {
+	if !errors.Is(e, iq.ErrUnavailable) || recordCount(out) != 0 {
 		t.Fatal("failed commit leaked", e)
 	}
 }

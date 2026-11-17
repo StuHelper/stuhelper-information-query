@@ -15,6 +15,36 @@ var (
 	ErrUnavailable     = admin.ErrUnavailable
 )
 
+// ErrorDetail wraps a base error with sanitized machine-readable diagnostics.
+// Domain and Field carry only known enum identifiers and never echo query inputs.
+type ErrorDetail struct {
+	Base   error  `json:"-"`
+	Code   string `json:"code"`
+	Reason string `json:"reason,omitempty"`
+	Domain string `json:"domain,omitempty"`
+	Field  string `json:"field,omitempty"`
+}
+
+func (e *ErrorDetail) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Code != "" {
+		return e.Code
+	}
+	if e.Base != nil {
+		return e.Base.Error()
+	}
+	return "unavailable"
+}
+
+func (e *ErrorDetail) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Base
+}
+
 type Query struct {
 	Kind    string      `json:"kind"`
 	Value   string      `json:"value"`

@@ -30,10 +30,13 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		scope := q.Scope
 		scope.Module = domain
 		if !q.Scope.Contains(scope) {
-			return out, ErrInvalid
+			return out, detailErr(ErrInvalid, "invalid_scope", domain, "")
 		}
-		for _, capability := range append([]string{domain}, q.Fields...) {
-			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(capability)+".read", scope, a); err != nil {
+		if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a, "domain_forbidden", domain, ""); err != nil {
+			return out, err
+		}
+		for _, category := range q.Fields {
+			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(category)+".read", scope, a, "field_forbidden", domain, category); err != nil {
 				return out, err
 			}
 		}
@@ -51,13 +54,13 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 	if originalAfter != "" {
 		b, e := base64.RawURLEncoding.DecodeString(originalAfter)
 		if e != nil || json.Unmarshal(b, &cursor) != nil || cursor.Binding != binding || len(cursor.Lead) > 1024 || len(cursor.Record) > 256 {
-			return out, ErrInvalid
+			return out, detailErr(ErrInvalid, "cursor_mismatch", "", "")
 		}
 	}
 	budget, remaining, payload := 700, q.Limit, 0
 	for len(out.Groups) < 50 && remaining > 0 && budget >= len(q.Domains) {
 		if ctx.Err() != nil {
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 		}
 		var candidate Candidate
 		next := ""
@@ -66,31 +69,38 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		} else {
 			resolver := s.Resolvers[q.Kind]
 			if resolver == nil {
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			candidates, n, e := resolver.Resolve(ctx, p, Lead{Kind: q.Kind, Value: q.Value, Scope: q.Scope, Purpose: q.Purpose, Limit: 1, After: cursor.Lead})
 			if e != nil {
-				if errors.Is(e, ErrForbidden) || errors.Is(e, ErrUnauthenticated) {
-					return out, e
+				if errors.Is(e, ErrUnauthenticated) {
+					return out, detailErr(ErrUnauthenticated, "unauthenticated", "", "")
 				}
-				return out, ErrUnavailable
+				if errors.Is(e, ErrForbidden) {
+					resolverDomain := ""
+					if q.Kind == "name" || q.Kind == "student_id" {
+						resolverDomain = "verification"
+					}
+					return out, detailErr(ErrForbidden, "domain_forbidden", resolverDomain, "")
+				}
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			if len(candidates) > 1 || len(n) > 1024 || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			if len(candidates) == 0 {
 				if cursor.Record != "" {
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, "candidate_changed", "", "")
 				}
 				return out, nil
 			}
 			candidate, next = candidates[0], n
 			if !clean(candidate.Account, 256) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			for _, f := range candidate.Label {
 				if !f.Masked || !clean(f.Name, 128) || len(f.Value) > 256 || !slices.Contains([]string{"business", "identity"}, f.Category) {
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 				}
 				payload += len(f.Name) + len(f.Value)
 			}
@@ -98,7 +108,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			for _, domain := range q.Domains {
 				scope := candidate.Scope
 				scope.Module = domain
-				if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a); err != nil {
+				if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a, "domain_forbidden", domain, ""); err != nil {
 					return out, err
 				}
 			}
@@ -114,11 +124,11 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			candidateKey = fingerprint(candidate)
 		}
 		if payload > 1048576 {
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "payload_too_large", "", "")
 		}
 
 		if cursor.Candidate != "" && cursor.Candidate != candidateKey {
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "candidate_changed", "", "")
 		}
 		// Domain-prefixed IDs form one total order. Its exclusive lower bound
 		// resumes every domain without retaining discarded fan-out records.

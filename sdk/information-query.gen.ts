@@ -86,6 +86,21 @@ export interface components {
         };
         Error: {
             code: string;
+            /**
+             * @description Machine-readable failure cause for localized recovery guidance.
+             * @enum {string}
+             */
+            reason?: "invalid_parameter" | "invalid_scope" | "school_required" | "invalid_account_key" | "cursor_mismatch" | "candidate_changed" | "payload_too_large" | "bot_disabled" | "bot_forbidden" | "channel_forbidden" | "domain_forbidden" | "field_forbidden" | "audit_forbidden" | "unauthenticated" | "auth_unavailable" | "resolver_unavailable" | "provider_unavailable" | "audit_unavailable";
+            /**
+             * @description Affected business domain when a domain check or provider failed; never echoes query values.
+             * @enum {string}
+             */
+            domain?: "profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups";
+            /**
+             * @description Affected sensitive field category when field authorization failed; never echoes query values.
+             * @enum {string}
+             */
+            field?: "identity" | "document" | "material" | "refund_payee";
         };
         AuditFilter: {
             scope: components["schemas"]["Scope"];

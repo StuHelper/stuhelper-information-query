@@ -15,6 +15,129 @@ import (
 	"time"
 )
 
+// Defines values for ErrorDomain.
+const (
+	ErrorDomainBilling      ErrorDomain = "billing"
+	ErrorDomainCatalog      ErrorDomain = "catalog"
+	ErrorDomainGroups       ErrorDomain = "groups"
+	ErrorDomainProfiles     ErrorDomain = "profiles"
+	ErrorDomainResources    ErrorDomain = "resources"
+	ErrorDomainReviews      ErrorDomain = "reviews"
+	ErrorDomainVerification ErrorDomain = "verification"
+)
+
+// Valid indicates whether the value is a known member of the ErrorDomain enum.
+func (e ErrorDomain) Valid() bool {
+	switch e {
+	case ErrorDomainBilling:
+		return true
+	case ErrorDomainCatalog:
+		return true
+	case ErrorDomainGroups:
+		return true
+	case ErrorDomainProfiles:
+		return true
+	case ErrorDomainResources:
+		return true
+	case ErrorDomainReviews:
+		return true
+	case ErrorDomainVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorField.
+const (
+	ErrorFieldDocument    ErrorField = "document"
+	ErrorFieldIdentity    ErrorField = "identity"
+	ErrorFieldMaterial    ErrorField = "material"
+	ErrorFieldRefundPayee ErrorField = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the ErrorField enum.
+func (e ErrorField) Valid() bool {
+	switch e {
+	case ErrorFieldDocument:
+		return true
+	case ErrorFieldIdentity:
+		return true
+	case ErrorFieldMaterial:
+		return true
+	case ErrorFieldRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorReason.
+const (
+	AuditForbidden      ErrorReason = "audit_forbidden"
+	AuditUnavailable    ErrorReason = "audit_unavailable"
+	AuthUnavailable     ErrorReason = "auth_unavailable"
+	BotDisabled         ErrorReason = "bot_disabled"
+	BotForbidden        ErrorReason = "bot_forbidden"
+	CandidateChanged    ErrorReason = "candidate_changed"
+	ChannelForbidden    ErrorReason = "channel_forbidden"
+	CursorMismatch      ErrorReason = "cursor_mismatch"
+	DomainForbidden     ErrorReason = "domain_forbidden"
+	FieldForbidden      ErrorReason = "field_forbidden"
+	InvalidAccountKey   ErrorReason = "invalid_account_key"
+	InvalidParameter    ErrorReason = "invalid_parameter"
+	InvalidScope        ErrorReason = "invalid_scope"
+	PayloadTooLarge     ErrorReason = "payload_too_large"
+	ProviderUnavailable ErrorReason = "provider_unavailable"
+	ResolverUnavailable ErrorReason = "resolver_unavailable"
+	SchoolRequired      ErrorReason = "school_required"
+	Unauthenticated     ErrorReason = "unauthenticated"
+)
+
+// Valid indicates whether the value is a known member of the ErrorReason enum.
+func (e ErrorReason) Valid() bool {
+	switch e {
+	case AuditForbidden:
+		return true
+	case AuditUnavailable:
+		return true
+	case AuthUnavailable:
+		return true
+	case BotDisabled:
+		return true
+	case BotForbidden:
+		return true
+	case CandidateChanged:
+		return true
+	case ChannelForbidden:
+		return true
+	case CursorMismatch:
+		return true
+	case DomainForbidden:
+		return true
+	case FieldForbidden:
+		return true
+	case InvalidAccountKey:
+		return true
+	case InvalidParameter:
+		return true
+	case InvalidScope:
+		return true
+	case PayloadTooLarge:
+		return true
+	case ProviderUnavailable:
+		return true
+	case ResolverUnavailable:
+		return true
+	case SchoolRequired:
+		return true
+	case Unauthenticated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FieldCategory.
 const (
 	FieldCategoryBusiness    FieldCategory = "business"
@@ -44,31 +167,31 @@ func (e FieldCategory) Valid() bool {
 
 // Defines values for QueryDomains.
 const (
-	Billing      QueryDomains = "billing"
-	Catalog      QueryDomains = "catalog"
-	Groups       QueryDomains = "groups"
-	Profiles     QueryDomains = "profiles"
-	Resources    QueryDomains = "resources"
-	Reviews      QueryDomains = "reviews"
-	Verification QueryDomains = "verification"
+	QueryDomainsBilling      QueryDomains = "billing"
+	QueryDomainsCatalog      QueryDomains = "catalog"
+	QueryDomainsGroups       QueryDomains = "groups"
+	QueryDomainsProfiles     QueryDomains = "profiles"
+	QueryDomainsResources    QueryDomains = "resources"
+	QueryDomainsReviews      QueryDomains = "reviews"
+	QueryDomainsVerification QueryDomains = "verification"
 )
 
 // Valid indicates whether the value is a known member of the QueryDomains enum.
 func (e QueryDomains) Valid() bool {
 	switch e {
-	case Billing:
+	case QueryDomainsBilling:
 		return true
-	case Catalog:
+	case QueryDomainsCatalog:
 		return true
-	case Groups:
+	case QueryDomainsGroups:
 		return true
-	case Profiles:
+	case QueryDomainsProfiles:
 		return true
-	case Resources:
+	case QueryDomainsResources:
 		return true
-	case Reviews:
+	case QueryDomainsReviews:
 		return true
-	case Verification:
+	case QueryDomainsVerification:
 		return true
 	default:
 		return false
@@ -176,7 +299,25 @@ type CandidateGroup struct {
 // Error defines model for Error.
 type Error struct {
 	Code string `json:"code"`
+
+	// Domain Affected business domain when a domain check or provider failed; never echoes query values.
+	Domain *ErrorDomain `json:"domain,omitempty"`
+
+	// Field Affected sensitive field category when field authorization failed; never echoes query values.
+	Field *ErrorField `json:"field,omitempty"`
+
+	// Reason Machine-readable failure cause for localized recovery guidance.
+	Reason *ErrorReason `json:"reason,omitempty"`
 }
+
+// ErrorDomain Affected business domain when a domain check or provider failed; never echoes query values.
+type ErrorDomain string
+
+// ErrorField Affected sensitive field category when field authorization failed; never echoes query values.
+type ErrorField string
+
+// ErrorReason Machine-readable failure cause for localized recovery guidance.
+type ErrorReason string
 
 // Field defines model for Field.
 type Field struct {

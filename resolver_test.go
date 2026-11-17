@@ -113,30 +113,33 @@ func TestResolverFailureAndIsolation(t *testing.T) {
 		if failure == iq.ErrForbidden {
 			expected = failure
 		}
-		if e != expected || len(out.Groups) != 0 || p.calls != 0 {
+		if !errors.Is(e, expected) || len(out.Groups) != 0 || p.calls != 0 {
 			t.Fatal("resolver failure", e)
 		}
 	}
 	s, _, p, q := resolvedFixture()
 	s.Resolvers = nil
-	if _, e := run(s, q); e != iq.ErrUnavailable || p.calls != 0 {
+	if _, e := run(s, q); !errors.Is(e, iq.ErrUnavailable) || p.calls != 0 {
 		t.Fatal("missing resolver", e)
 	}
 	s, r, p, q := resolvedFixture()
 	s.Auth = &auth{caps: map[string]bool{"information-query.profiles.read": true}, scope: q.Scope}
 	q.Domains = []string{"profiles", "billing"}
-	if _, e := run(s, q); e != iq.ErrForbidden || r.calls != 0 || p.calls != 0 {
-		t.Fatal("IQ-04", e)
+	_, e := run(s, q)
+	var detail *iq.ErrorDetail
+	if !errors.Is(e, iq.ErrForbidden) || !errors.As(e, &detail) || detail.Reason != "domain_forbidden" || detail.Domain != "billing" || r.calls != 0 || p.calls != 0 {
+		t.Fatal("IQ-04", e, detail)
 	}
 	s, r, p, q = resolvedFixture()
 	r.candidates[0].Scope.School = "other-school"
-	if _, e := run(s, q); e != iq.ErrUnavailable || p.calls != 0 {
+	if _, e := run(s, q); !errors.Is(e, iq.ErrUnavailable) || p.calls != 0 {
 		t.Fatal("candidate scope leak", e)
 	}
 	s, _, p, q = resolvedFixture()
 	p.wrong = true
-	if _, e := run(s, q); e != iq.ErrUnavailable {
-		t.Fatal("wrong account", e)
+	_, e = run(s, q)
+	if !errors.Is(e, iq.ErrUnavailable) || !errors.As(e, &detail) || detail.Reason != "provider_unavailable" || detail.Domain != "profiles" {
+		t.Fatal("wrong account", e, detail)
 	}
 }
 func TestCompositePagination(t *testing.T) {
@@ -175,8 +178,9 @@ func TestCompositePagination(t *testing.T) {
 		t.Fatal("missing domain")
 	}
 	q.Value = "different"
-	if _, e := run(s, q); e != iq.ErrInvalid {
-		t.Fatal("cursor query binding", e)
+	var detail *iq.ErrorDetail
+	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || !errors.As(e, &detail) || detail.Reason != "cursor_mismatch" {
+		t.Fatal("cursor query binding", e, detail)
 	}
 }
 func TestCandidateChangeAndWorkBound(t *testing.T) {
@@ -188,8 +192,9 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 	}
 	q.After = out.NextCursor
 	r.candidates[0].Account = "issuer:bob"
-	if _, e = run(s, q); e != iq.ErrUnavailable {
-		t.Fatal("stale candidate accepted", e)
+	var detail *iq.ErrorDetail
+	if _, e = run(s, q); !errors.Is(e, iq.ErrUnavailable) || !errors.As(e, &detail) || detail.Reason != "candidate_changed" {
+		t.Fatal("stale candidate accepted", e, detail)
 	}
 	s, r, p, q := resolvedFixture()
 	q.Limit = 100
