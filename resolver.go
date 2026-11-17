@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/StuHelper/stuhelper-platform/account"
 )
@@ -57,6 +58,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 	budget, remaining, payload := 700, q.Limit, 0
 	for len(out.Groups) < 50 && remaining > 0 && budget >= len(q.Domains) {
 		if ctx.Err() != nil {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "timeout"})
 			return out, ErrUnavailable
 		}
 		var candidate Candidate
@@ -66,34 +68,49 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		} else {
 			resolver := s.Resolvers[q.Kind]
 			if resolver == nil {
+				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "resolver_missing"})
 				return out, ErrUnavailable
 			}
+			resolveStart := time.Now()
 			candidates, n, e := resolver.Resolve(ctx, p, Lead{Kind: q.Kind, Value: q.Value, Scope: q.Scope, Purpose: q.Purpose, Limit: 1, After: cursor.Lead})
+			resolveDuration := time.Since(resolveStart)
 			if e != nil {
-				if errors.Is(e, ErrForbidden) || errors.Is(e, ErrUnauthenticated) {
+				if errors.Is(e, ErrForbidden) {
+					s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "forbidden", Duration: resolveDuration})
 					return out, e
 				}
+				if errors.Is(e, ErrUnauthenticated) {
+					s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "unauthenticated", Duration: resolveDuration})
+					return out, e
+				}
+				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "resolver_error", Duration: resolveDuration})
 				return out, ErrUnavailable
 			}
 			if len(candidates) > 1 || len(n) > 1024 || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
+				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_resolver_page", Duration: resolveDuration})
 				return out, ErrUnavailable
 			}
 			if len(candidates) == 0 {
 				if cursor.Record != "" {
+					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "candidate_changed", Duration: resolveDuration})
 					return out, ErrUnavailable
 				}
+				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "ok", Duration: resolveDuration})
 				return out, nil
 			}
 			candidate, next = candidates[0], n
 			if !clean(candidate.Account, 256) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
+				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_candidate", Duration: resolveDuration})
 				return out, ErrUnavailable
 			}
 			for _, f := range candidate.Label {
 				if !f.Masked || !clean(f.Name, 128) || len(f.Value) > 256 || !slices.Contains([]string{"business", "identity"}, f.Category) {
+					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_candidate_label", Duration: resolveDuration})
 					return out, ErrUnavailable
 				}
 				payload += len(f.Name) + len(f.Value)
 			}
+			s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "ok", Duration: resolveDuration})
 			// Recheck the actual candidate scope independently in each requested domain.
 			for _, domain := range q.Domains {
 				scope := candidate.Scope
@@ -114,10 +131,12 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			candidateKey = fingerprint(candidate)
 		}
 		if payload > 1048576 {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "payload_limit"})
 			return out, ErrUnavailable
 		}
 
 		if cursor.Candidate != "" && cursor.Candidate != candidateKey {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "candidate_changed"})
 			return out, ErrUnavailable
 		}
 		// Domain-prefixed IDs form one total order. Its exclusive lower bound

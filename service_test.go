@@ -2,10 +2,12 @@ package informationquery_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/admin"
+	"strings"
 	"testing"
 	"time"
 )
@@ -200,4 +202,75 @@ func recordCount(out iq.Result) int {
 		n += len(g.Items)
 	}
 	return n
+}
+
+type failingProvider struct{}
+
+func (failingProvider) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
+	return nil, errors.New("provider timeout SECRET-CLUE")
+}
+
+func TestSanitizedObserveHookStagesAndZeroLeak(t *testing.T) {
+	s, r, a, p, q := fixture()
+	a.platform = true
+	var events []iq.Event
+	s.Observe = func(ev iq.Event) {
+		events = append(events, ev)
+	}
+	q.Value = "SECRET-USER-KEY"
+	p.items[0].Subject = "SECRET-USER-KEY"
+	p.items[0].Fields = []iq.Field{{Name: "id_num", Category: "document", Value: "SECRET-DOC-VALUE"}}
+	q.Fields = []string{"document"}
+
+	// 1. Successful query emits provider ok + audit success without leaking values.
+	if _, err := s.Query(context.Background(), actor, "req-obs-1", iq.Delivery{Channel: "admin"}, q); err != nil {
+		t.Fatal(err)
+	}
+	// 2. Missing resolver emits resolve stage resolver_missing.
+	nameQ := q
+	nameQ.Kind = "name"
+	nameQ.Value = "SECRET-REAL-NAME"
+	if _, err := s.Query(context.Background(), actor, "req-obs-2", iq.Delivery{Channel: "admin"}, nameQ); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	// 3. Provider failure emits provider stage provider_error with domain="profiles".
+	s.Providers["profiles"] = failingProvider{}
+	if _, err := s.Query(context.Background(), actor, "req-obs-3", iq.Delivery{Channel: "admin"}, q); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	// 4. Contract violation (wrong Subject) emits contract stage invalid_record.
+	p.items[0].Subject = "wrong-subject"
+	s.Providers["profiles"] = p
+	if _, err := s.Query(context.Background(), actor, "req-obs-4", iq.Delivery{Channel: "admin"}, q); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	// 5. Audit failure emits audit stage audit_append_error.
+	p.items[0].Subject = "SECRET-USER-KEY"
+	r.fail = true
+	if _, err := s.Query(context.Background(), actor, "req-obs-5", iq.Delivery{Channel: "admin"}, q); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+
+	seenStageCode := map[string]bool{}
+	for _, ev := range events {
+		seenStageCode[string(ev.Stage)+":"+ev.Code] = true
+	}
+	for _, want := range []string{
+		"provider:ok",
+		"audit:success",
+		"resolve:resolver_missing",
+		"provider:provider_error",
+		"contract:invalid_record",
+		"audit:audit_append_error",
+	} {
+		if !seenStageCode[want] {
+			t.Fatalf("missing expected telemetry event %q in %+v", want, events)
+		}
+	}
+	serialized, _ := json.Marshal(events)
+	for _, secret := range []string{"SECRET-USER-KEY", "SECRET-DOC-VALUE", "SECRET-REAL-NAME", "SECRET-CLUE"} {
+		if strings.Contains(string(serialized), secret) {
+			t.Fatalf("telemetry leaked secret %q: %s", secret, string(serialized))
+		}
+	}
 }

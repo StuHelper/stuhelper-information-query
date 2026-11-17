@@ -217,3 +217,65 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 		t.Fatal("boundary removed", kept, e)
 	}
 }
+
+func TestPendingStatsBoundedBacklogAndOldestTimestamp(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+
+	if _, _, _, err := (postgres.Maintenance{}).PendingStats(ctx, time.Now()); err != iq.ErrUnavailable {
+		t.Fatalf("expected ErrUnavailable on nil pool, got %v", err)
+	}
+
+	now := time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC)
+	cutoff := now.AddDate(-1, 0, 0)
+	oldestWant := cutoff.Add(-3 * time.Hour)
+	for _, at := range []time.Time{oldestWant, cutoff.Add(-time.Hour), cutoff} {
+		if e = r.Append(ctx, iq.Audit{Scope: admin.Global, CreatedAt: at}); e != nil {
+			t.Fatal(e)
+		}
+	}
+
+	_, e = pool.Exec(ctx, `CREATE ROLE iq_stats_maintenance NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_stats_maintenance; GRANT SELECT,DELETE ON information_query.audit TO iq_stats_maintenance;`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	cfg, e := pgxpool.ParseConfig(dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	cfg.ConnConfig.RuntimeParams["role"] = "iq_stats_maintenance"
+	maintPool, e := pgxpool.NewWithConfig(ctx, cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer maintPool.Close()
+
+	m := postgres.Maintenance{Pool: maintPool, Now: func() time.Time { return now }}
+	if _, _, _, err := m.PendingStats(ctx, cutoff.Add(time.Second)); err != iq.ErrInvalid {
+		t.Fatalf("expected ErrInvalid when before exceeds retention cutoff, got %v", err)
+	}
+
+	oldest, hasExpired, count, err := m.PendingStats(ctx, cutoff)
+	if err != nil || !hasExpired || count != 2 || !oldest.Equal(oldestWant) {
+		t.Fatalf("unexpected PendingStats before prune: oldest=%v hasExpired=%v count=%d err=%v", oldest, hasExpired, count, err)
+	}
+	if deleted, err := m.PruneAudit(ctx, cutoff, 100); err != nil || deleted != 2 {
+		t.Fatalf("prune failed: deleted=%d err=%v", deleted, err)
+	}
+	oldestAfter, hasExpiredAfter, countAfter, err := m.PendingStats(ctx, cutoff)
+	if err != nil || hasExpiredAfter || countAfter != 0 || !oldestAfter.IsZero() {
+		t.Fatalf("unexpected PendingStats after prune: oldest=%v hasExpired=%v count=%d err=%v", oldestAfter, hasExpiredAfter, countAfter, err)
+	}
+}

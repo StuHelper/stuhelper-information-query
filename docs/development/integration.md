@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -47,6 +47,8 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
 
+Service.Observe 可选接收诊断事件，仅含请求 ID、阶段（auth、resolve、provider、contract、audit）、域、线索类型、脱敏状态码和耗时，编译期不接收查询原值或字段值。
+
 HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。查询整体限时 10 秒，审计提交独立限时 3 秒。依赖须遵守 context；原始线索、正文和敏感结果不得进入日志。
 
 ## 权限与审计
@@ -71,7 +73,7 @@ postgres.Maintenance 使用单独连接池，仅授予 schema USAGE 和 audit SE
 
 RetentionMonths=0 时默认保留 12 个自然月，可由维护进程配置为 1 至 1200 个月。截止时间按 UTC 当前时间 AddDate(0,-months,0) 计算。before 必须不晚于保留截止时间，清理严格早于 before 的记录，边界记录保留。
 
-PruneAudit 每次 limit 为 1 至 1000，按 created_at、id 稳定选择并在单条 SQL 中删除，返回实际删除数。超时为 3 秒；失败不产生部分提交，可重试。维护任务应监控积压、失败与最早到期时间，分批执行并限制调度次数。
+PruneAudit 每次 limit 为 1 至 1000，按 created_at、id 稳定选择并在单条 SQL 中删除，返回实际删除数。超时为 3 秒；失败不产生部分提交，可重试。Maintenance.PendingStats 通过只读 SELECT 返回最早到期时间与有界积压数（上限 10001），供维护任务监控积压与清理延迟。
 
 争议保留的逐对象排除尚未实现。有保留义务时，维护人暂停相关清理或使用覆盖保留范围的更早 before；不能直接用默认截止时间清理争议数据。恢复后开放服务前须重新执行到期规则，恢复演练仍待验证。
 

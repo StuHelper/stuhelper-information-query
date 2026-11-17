@@ -16,6 +16,7 @@ import (
 
 var domains = []string{"profiles", "verification", "catalog", "reviews", "resources", "billing", "groups"}
 var categories = []string{"identity", "document", "material", "refund_payee"}
+var kinds = []string{"name", "student_id", "qq", "account"}
 
 type Service struct {
 	Auth       Authorizer
@@ -24,6 +25,7 @@ type Service struct {
 	Providers  map[string]Provider // immutable after host assembly
 	BotEnabled bool                // disabled by default, including platform administrators
 	Now        func() time.Time
+	Observe    func(Event) // optional sanitized diagnostic hook
 }
 
 func clean(v string, max int) bool {
@@ -49,14 +51,37 @@ func (s Service) now() time.Time {
 	}
 	return time.Now().UTC()
 }
+func (s Service) observe(ev Event) {
+	if s.Observe == nil {
+		return
+	}
+	if !clean(ev.RequestID, 128) {
+		ev.RequestID = ""
+	}
+	if !slices.Contains(domains, ev.Domain) {
+		ev.Domain = ""
+	}
+	if !slices.Contains(kinds, ev.Kind) {
+		ev.Kind = ""
+	}
+	s.Observe(ev)
+}
 func (s Service) evaluate(ctx context.Context, p account.Principal, cap string, scope admin.Scope, a *Audit) error {
+	start := time.Now()
 	if s.Auth == nil {
+		s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "auth_missing"})
 		return ErrUnavailable
 	}
 	if e := s.Auth.Evaluate(ctx, p, cap, scope); e != nil {
-		if errors.Is(e, ErrForbidden) || errors.Is(e, ErrUnauthenticated) {
+		if errors.Is(e, ErrForbidden) {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "forbidden", Duration: time.Since(start)})
 			return e
 		}
+		if errors.Is(e, ErrUnauthenticated) {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "unauthenticated", Duration: time.Since(start)})
+			return e
+		}
+		s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "auth_error", Duration: time.Since(start)})
 		return ErrUnavailable
 	}
 	if !slices.Contains(a.Basis, cap) {
@@ -77,12 +102,19 @@ func (s Service) finish(ctx context.Context, a Audit, err error) error {
 			}
 		}
 	}
+	start := time.Now()
 	// A cancelled caller must not prevent recording a denial or a completed disclosure.
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	if s.Repo == nil || s.Repo.Append(auditCtx, a) != nil {
+	if s.Repo == nil {
+		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_missing"})
 		return ErrUnavailable
 	}
+	if s.Repo.Append(auditCtx, a) != nil {
+		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_append_error", Duration: time.Since(start)})
+		return ErrUnavailable
+	}
+	s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: a.Result, Duration: time.Since(start)})
 	return err
 }
 func validDelivery(d Delivery) bool {
@@ -101,7 +133,7 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains(kinds, q.Kind) {
 		return out, ErrInvalid
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {
@@ -164,19 +196,29 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 		pq := q
 		pq.Scope = scope
 		pq.Domains = []string{domain}
+		callStart := time.Now()
 		records, e := provider.Query(ctx, p, pq)
+		callDuration := time.Since(callStart)
 		if e != nil {
-			if errors.Is(e, ErrForbidden) || errors.Is(e, ErrUnauthenticated) {
+			if errors.Is(e, ErrForbidden) {
+				s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "forbidden", Duration: callDuration})
 				return out, e
 			}
+			if errors.Is(e, ErrUnauthenticated) {
+				s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "unauthenticated", Duration: callDuration})
+				return out, e
+			}
+			s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "provider_error", Duration: callDuration})
 			return out, ErrUnavailable
 		}
 		if len(records) > q.Limit {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "record_limit_exceeded", Duration: callDuration})
 			return out, ErrUnavailable
 		}
 		previous := q.After
 		for _, r := range records {
 			if !strings.HasPrefix(r.ID, domain+":") || !clean(r.ID, 256) || r.ID <= previous || (!clean(r.Subject, 2048) || r.Subject != q.Value) || !clean(r.Source, 128) || r.ChangedAt.IsZero() || !r.Scope.Valid() || r.Scope.Module != domain || !scope.Contains(r.Scope) || len(r.Fields) > 100 {
+				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "invalid_record", Duration: callDuration})
 				return out, ErrUnavailable
 			}
 			previous = r.ID
@@ -187,9 +229,15 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 			for _, f := range r.Fields {
 				*payloadBytes += len(f.Name) + len(f.Value)
 				if !clean(f.Name, 128) || len(f.Value) > 65536 || *payloadBytes > 1048576 {
+					code := "invalid_field"
+					if len(f.Value) > 65536 || *payloadBytes > 1048576 {
+						code = "payload_limit"
+					}
+					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: code, Duration: callDuration})
 					return out, ErrUnavailable
 				}
 				if f.Category != "business" && !slices.Contains(categories, f.Category) {
+					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "invalid_field_category", Duration: callDuration})
 					return out, ErrUnavailable
 				}
 				if f.Category != "business" {
@@ -209,11 +257,13 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 			r.Fields = filtered
 			out.Items = append(out.Items, r)
 		}
+		s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "ok", Duration: callDuration})
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].ID < out.Items[j].ID })
 	// IDs must be globally unique (owning-module prefix) for stable fan-out pagination.
 	for i := 1; i < len(out.Items); i++ {
 		if out.Items[i-1].ID == out.Items[i].ID {
+			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "duplicate_record_id"})
 			return out, ErrUnavailable
 		}
 	}
@@ -247,12 +297,15 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 		return out, err
 	}
 	if s.Repo == nil {
+		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_missing"})
 		return out, ErrUnavailable
 	}
+	readStart := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	out, err = s.Repo.Read(ctx, f)
 	if err != nil {
+		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_read_error", Duration: time.Since(readStart)})
 		return out, ErrUnavailable
 	}
 	a.Count = len(out.Items)
