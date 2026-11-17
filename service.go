@@ -135,13 +135,12 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 }
 
 type recordPage struct {
-	Items              []Record
-	NextCursor         string
-	UnavailableDomains []string
+	Items      []Record
+	NextCursor string
 }
 
 func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query, a *Audit, payloadBytes *int) (out recordPage, err error) {
-	out = recordPage{Items: []Record{}, UnavailableDomains: []string{}}
+	out = recordPage{Items: []Record{}}
 	for _, domain := range q.Domains {
 		scope := q.Scope
 		scope.Module = domain
@@ -158,7 +157,6 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 		}
 		provider := s.Providers[domain]
 		if provider == nil {
-			out.UnavailableDomains = append(out.UnavailableDomains, domain)
 			continue
 		}
 		pq := q

@@ -2,17 +2,27 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-information-query/httpapi"
+	"github.com/StuHelper/stuhelper-information-query/sdk"
 	"github.com/StuHelper/stuhelper-platform/account"
+	"github.com/StuHelper/stuhelper-platform/admin"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 )
 
 func TestStrictHTTPAndTrustedIdentity(t *testing.T) {
-	h := httpapi.Handler{Service: &iq.Service{Repo: auditRepo{}}, Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+	spec := loadOpenAPI(t)
+	h := httpapi.Handler{Service: &iq.Service{Repo: &auditRepo{}}, Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
 		return account.Principal{}, iq.Delivery{Channel: "admin"}, "req"
 	}}
 	for _, body := range []string{`{"actor":"admin"}`, `{} {}`, strings.Repeat("x", 17000)} {
@@ -21,12 +31,373 @@ func TestStrictHTTPAndTrustedIdentity(t *testing.T) {
 		if w.Code != 400 || w.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal(w.Code, w.Body.String())
 		}
+		assertOpenAPISchema(t, spec, "Error", w.Body.Bytes())
 	}
 }
 
-type auditRepo struct{}
+func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	// Verify contract validator catches null slices and invalid empty Scope fields.
+	if err := validateOpenAPIBytes(spec, "AuditPage", []byte(`{"items":[{"id":"1","actor":"a","request_id":"r","purpose":"p","scope":{"school":"s","group":"g","module":"m"},"channel":"admin","target_group":"","action":"query","result":"success","count":0,"targets":null,"fields":[],"basis":[],"created_at":"2026-11-18T00:00:00Z"}],"next_cursor":""}`)); err == nil {
+		t.Fatal("contract validator accepted null targets slice")
+	}
+	if err := validateOpenAPIBytes(spec, "Scope", []byte(`{"school":"","group":"*","module":"*"}`)); err == nil {
+		t.Fatal("contract validator accepted empty school in Scope")
+	}
 
-func (auditRepo) Append(context.Context, iq.Audit) error { return nil }
-func (auditRepo) Read(context.Context, iq.AuditFilter) (iq.AuditPage, error) {
-	return iq.AuditPage{}, nil
+	// 405 and 404 handling, plus 503 when Service or Identity is nil.
+	emptyHandler := httpapi.Handler{}
+	w := httptest.NewRecorder()
+	emptyHandler.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/information-query/query", nil))
+	if w.Code != 405 {
+		t.Fatalf("expected 405 for GET, got %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	emptyHandler.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/information-query/query", strings.NewReader(`{}`)))
+	if w.Code != 503 {
+		t.Fatalf("expected 503 for nil Service/Identity, got %d", w.Code)
+	}
+	assertOpenAPISchema(t, spec, "Error", w.Body.Bytes())
+
+	repo := &auditRepo{}
+	auth := mapAuth{
+		"information-query.profiles.read":     true,
+		"information-query.verification.read": true,
+		"information-query.audit.read":        true,
+	}
+	prov := fixedProvider{items: []iq.Record{{
+		ID:        "profiles:1",
+		Subject:   "issuer:alice",
+		Scope:     admin.Scope{School: "buaa", Group: "*", Module: "profiles"},
+		Source:    "profiles",
+		Current:   true,
+		ChangedAt: time.Date(2026, 11, 18, 1, 2, 3, 0, time.UTC),
+		Fields: []iq.Field{
+			{Name: "nickname", Category: "business", Value: "alice", Masked: false},
+			{Name: "real_name", Category: "identity", Value: "Alice", Masked: false},
+		},
+	}}}
+	svc := &iq.Service{
+		Auth:      auth,
+		Repo:      repo,
+		Providers: map[string]iq.Provider{"profiles": prov},
+		Now:       func() time.Time { return time.Date(2026, 11, 18, 2, 0, 0, 0, time.UTC) },
+	}
+
+	currentPrincipal := account.Principal{Issuer: "issuer", Subject: "operator"}
+	currentDelivery := iq.Delivery{Channel: "admin"}
+	h := httpapi.Handler{
+		Service: svc,
+		Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+			return currentPrincipal, currentDelivery, "req-http-1"
+		},
+	}
+
+	// Unknown route -> 404.
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/information-query/unknown", strings.NewReader(`{}`)))
+	if w.Code != 404 {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client, err := sdk.NewClientWithResponses(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. 200 OK on /query via generated SDK + strict OpenAPI validation.
+	qResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
+		Kind:    sdk.Account,
+		Value:   "issuer:alice",
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Domains: []sdk.QueryDomains{sdk.Profiles, sdk.Verification},
+		Purpose: "核查账号资料",
+		Limit:   20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qResp.StatusCode() != 200 || qResp.JSON200 == nil || len(qResp.JSON200.Groups) != 1 || len(qResp.JSON200.UnavailableDomains) != 1 {
+		t.Fatalf("unexpected 200 query response: status=%d body=%s", qResp.StatusCode(), string(qResp.Body))
+	}
+	assertOpenAPISchema(t, spec, "Result", qResp.Body)
+
+	// 2. 200 OK on /audit/query via generated SDK + strict OpenAPI validation.
+	aResp, err := client.QueryInformationAuditWithResponse(context.Background(), sdk.AuditFilter{
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Purpose: "查阅审计记录",
+		After:   "",
+		Limit:   20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aResp.StatusCode() != 200 || aResp.JSON200 == nil || len(aResp.JSON200.Items) != 1 {
+		t.Fatalf("unexpected 200 audit response: status=%d body=%s", aResp.StatusCode(), string(aResp.Body))
+	}
+	assertOpenAPISchema(t, spec, "AuditPage", aResp.Body)
+
+	// 3. Bot channel calling /audit/query is intercepted with 403 and recorded in audit.
+	beforeRejectCount := len(repo.items)
+	currentDelivery = iq.Delivery{Channel: "bot_group", Group: "group-1"}
+	botAuditResp, err := client.QueryInformationAuditWithResponse(context.Background(), sdk.AuditFilter{
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Purpose: "机器人越权查审计",
+		After:   "",
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if botAuditResp.StatusCode() != 403 || len(repo.items) != beforeRejectCount+1 || repo.items[len(repo.items)-1].Result != "forbidden" {
+		t.Fatalf("expected 403 and recorded rejection for bot audit access, got status=%d audits=%d", botAuditResp.StatusCode(), len(repo.items))
+	}
+	assertOpenAPISchema(t, spec, "Error", botAuditResp.Body)
+
+	// 4. 403 Forbidden for unauthorized domain on admin channel.
+	currentDelivery = iq.Delivery{Channel: "admin"}
+	forbResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
+		Kind:    sdk.Account,
+		Value:   "issuer:alice",
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Domains: []sdk.QueryDomains{sdk.Billing},
+		Purpose: "无权查账务",
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forbResp.StatusCode() != 403 {
+		t.Fatalf("expected 403, got %d", forbResp.StatusCode())
+	}
+	assertOpenAPISchema(t, spec, "Error", forbResp.Body)
+
+	// 5. 401 Unauthenticated when principal is empty.
+	currentPrincipal = account.Principal{}
+	unauthResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
+		Kind:    sdk.Account,
+		Value:   "issuer:alice",
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Domains: []sdk.QueryDomains{sdk.Profiles},
+		Purpose: "匿名请求",
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unauthResp.StatusCode() != 401 {
+		t.Fatalf("expected 401, got %d", unauthResp.StatusCode())
+	}
+	assertOpenAPISchema(t, spec, "Error", unauthResp.Body)
+
+	// 6. 503 Unavailable when audit repository fails.
+	currentPrincipal = account.Principal{Issuer: "issuer", Subject: "operator"}
+	repo.fail = true
+	unavailResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
+		Kind:    sdk.Account,
+		Value:   "issuer:alice",
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Domains: []sdk.QueryDomains{sdk.Profiles},
+		Purpose: "审计离线",
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unavailResp.StatusCode() != 503 {
+		t.Fatalf("expected 503, got %d", unavailResp.StatusCode())
+	}
+	assertOpenAPISchema(t, spec, "Error", unavailResp.Body)
+}
+
+type mapAuth map[string]bool
+
+func (m mapAuth) Evaluate(_ context.Context, p account.Principal, cap string, _ admin.Scope) error {
+	if !p.Valid() {
+		return iq.ErrUnauthenticated
+	}
+	if m[cap] {
+		return nil
+	}
+	return iq.ErrForbidden
+}
+
+type fixedProvider struct {
+	items []iq.Record
+}
+
+func (p fixedProvider) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
+	return p.items, nil
+}
+
+type auditRepo struct {
+	items []iq.Audit
+	fail  bool
+}
+
+func (r *auditRepo) Append(_ context.Context, a iq.Audit) error {
+	if r.fail {
+		return errors.New("audit down")
+	}
+	a.ID = fmt.Sprintf("%d", len(r.items)+1)
+	r.items = append(r.items, a)
+	return nil
+}
+
+func (r *auditRepo) Read(_ context.Context, _ iq.AuditFilter) (iq.AuditPage, error) {
+	if r.fail {
+		return iq.AuditPage{}, errors.New("audit down")
+	}
+	out := make([]iq.Audit, len(r.items))
+	copy(out, r.items)
+	return iq.AuditPage{Items: out}, nil
+}
+
+type openAPIDoc struct {
+	Components struct {
+		Schemas map[string]map[string]any `json:"schemas"`
+	} `json:"components"`
+}
+
+func loadOpenAPI(t *testing.T) openAPIDoc {
+	t.Helper()
+	var doc openAPIDoc
+	if err := json.Unmarshal(iq.OpenAPI(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+func assertOpenAPISchema(t *testing.T, doc openAPIDoc, schemaName string, raw []byte) {
+	t.Helper()
+	if err := validateOpenAPIBytes(doc, schemaName, raw); err != nil {
+		t.Fatalf("OpenAPI %s contract violation: %v\npayload: %s", schemaName, err, string(raw))
+	}
+}
+
+func validateOpenAPIBytes(doc openAPIDoc, schemaName string, raw []byte) error {
+	var val any
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	if err := dec.Decode(&val); err != nil {
+		return err
+	}
+	schema, ok := doc.Components.Schemas[schemaName]
+	if !ok {
+		return fmt.Errorf("unknown schema %q", schemaName)
+	}
+	return validateValue(doc, schema, val, schemaName)
+}
+
+func validateValue(doc openAPIDoc, schema map[string]any, val any, path string) error {
+	if ref, ok := schema["$ref"].(string); ok {
+		name := strings.TrimPrefix(ref, "#/components/schemas/")
+		target, exists := doc.Components.Schemas[name]
+		if !exists {
+			return fmt.Errorf("%s: unresolved ref %s", path, ref)
+		}
+		return validateValue(doc, target, val, path)
+	}
+	if val == nil {
+		return fmt.Errorf("%s: unexpected null value", path)
+	}
+	switch schema["type"] {
+	case "object":
+		obj, ok := val.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s: expected object, got %T", path, val)
+		}
+		props, _ := schema["properties"].(map[string]any)
+		if reqList, ok := schema["required"].([]any); ok {
+			for _, r := range reqList {
+				key := r.(string)
+				if _, exists := obj[key]; !exists {
+					return fmt.Errorf("%s: missing required field %q", path, key)
+				}
+			}
+		}
+		if addl, ok := schema["additionalProperties"].(bool); ok && !addl {
+			for k := range obj {
+				if _, allowed := props[k]; !allowed {
+					return fmt.Errorf("%s: unexpected additional property %q", path, k)
+				}
+			}
+		}
+		for k, v := range obj {
+			if propSchema, exists := props[k].(map[string]any); exists {
+				if err := validateValue(doc, propSchema, v, path+"."+k); err != nil {
+					return err
+				}
+			}
+		}
+	case "array":
+		arr, ok := val.([]any)
+		if !ok {
+			return fmt.Errorf("%s: expected array, got %T", path, val)
+		}
+		if maxItems, ok := schema["maxItems"].(float64); ok && len(arr) > int(maxItems) {
+			return fmt.Errorf("%s: array length %d > maxItems %d", path, len(arr), int(maxItems))
+		}
+		if itemSchema, ok := schema["items"].(map[string]any); ok {
+			for i, elem := range arr {
+				if err := validateValue(doc, itemSchema, elem, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+					return err
+				}
+			}
+		}
+	case "string":
+		s, ok := val.(string)
+		if !ok {
+			return fmt.Errorf("%s: expected string, got %T", path, val)
+		}
+		runes := utf8.RuneCountInString(s)
+		if minLen, ok := schema["minLength"].(float64); ok && runes < int(minLen) {
+			return fmt.Errorf("%s: length %d < minLength %d", path, runes, int(minLen))
+		}
+		if maxLen, ok := schema["maxLength"].(float64); ok && runes > int(maxLen) {
+			return fmt.Errorf("%s: length %d > maxLength %d", path, runes, int(maxLen))
+		}
+		if enums, ok := schema["enum"].([]any); ok {
+			allowed := make([]string, len(enums))
+			for i, e := range enums {
+				allowed[i] = e.(string)
+			}
+			if !slices.Contains(allowed, s) {
+				return fmt.Errorf("%s: value %q not in enum %v", path, s, allowed)
+			}
+		}
+		if pat, ok := schema["pattern"].(string); ok {
+			re, err := regexp.Compile(pat)
+			if err != nil || !re.MatchString(s) {
+				return fmt.Errorf("%s: value %q does not match pattern %q", path, s, pat)
+			}
+		}
+		if schema["format"] == "date-time" {
+			if _, err := time.Parse(time.RFC3339Nano, s); err != nil {
+				return fmt.Errorf("%s: invalid date-time %q: %v", path, s, err)
+			}
+		}
+	case "boolean":
+		if _, ok := val.(bool); !ok {
+			return fmt.Errorf("%s: expected boolean, got %T", path, val)
+		}
+	case "integer":
+		num, ok := val.(json.Number)
+		if !ok {
+			return fmt.Errorf("%s: expected integer, got %T", path, val)
+		}
+		n, err := num.Int64()
+		if err != nil {
+			return fmt.Errorf("%s: invalid integer %q: %v", path, num.String(), err)
+		}
+		if minVal, ok := schema["minimum"].(float64); ok && n < int64(minVal) {
+			return fmt.Errorf("%s: %d < minimum %d", path, n, int64(minVal))
+		}
+		if maxVal, ok := schema["maximum"].(float64); ok && n > int64(maxVal) {
+			return fmt.Errorf("%s: %d > maximum %d", path, n, int64(maxVal))
+		}
+	}
+	return nil
 }
