@@ -59,6 +59,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				out, err = h.Service.Audit(r.Context(), p, id, q)
 			}
 		}
+	case "/api/v1/information-query/capabilities":
+		var q iq.CapabilitiesRequest
+		err = decode(w, r, &q)
+		if err == nil {
+			out, err = h.Service.Capabilities(r.Context(), p, d, q)
+			write(w, out, err)
+			return
+		}
 	default:
 		w.WriteHeader(404)
 		return

@@ -15,6 +15,120 @@ import (
 	"time"
 )
 
+// Defines values for CapabilitiesAllowedDomains.
+const (
+	CapabilitiesAllowedDomainsBilling      CapabilitiesAllowedDomains = "billing"
+	CapabilitiesAllowedDomainsCatalog      CapabilitiesAllowedDomains = "catalog"
+	CapabilitiesAllowedDomainsGroups       CapabilitiesAllowedDomains = "groups"
+	CapabilitiesAllowedDomainsProfiles     CapabilitiesAllowedDomains = "profiles"
+	CapabilitiesAllowedDomainsResources    CapabilitiesAllowedDomains = "resources"
+	CapabilitiesAllowedDomainsReviews      CapabilitiesAllowedDomains = "reviews"
+	CapabilitiesAllowedDomainsVerification CapabilitiesAllowedDomains = "verification"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAllowedDomains enum.
+func (e CapabilitiesAllowedDomains) Valid() bool {
+	switch e {
+	case CapabilitiesAllowedDomainsBilling:
+		return true
+	case CapabilitiesAllowedDomainsCatalog:
+		return true
+	case CapabilitiesAllowedDomainsGroups:
+		return true
+	case CapabilitiesAllowedDomainsProfiles:
+		return true
+	case CapabilitiesAllowedDomainsResources:
+		return true
+	case CapabilitiesAllowedDomainsReviews:
+		return true
+	case CapabilitiesAllowedDomainsVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAllowedFields.
+const (
+	CapabilitiesAllowedFieldsDocument    CapabilitiesAllowedFields = "document"
+	CapabilitiesAllowedFieldsIdentity    CapabilitiesAllowedFields = "identity"
+	CapabilitiesAllowedFieldsMaterial    CapabilitiesAllowedFields = "material"
+	CapabilitiesAllowedFieldsRefundPayee CapabilitiesAllowedFields = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAllowedFields enum.
+func (e CapabilitiesAllowedFields) Valid() bool {
+	switch e {
+	case CapabilitiesAllowedFieldsDocument:
+		return true
+	case CapabilitiesAllowedFieldsIdentity:
+		return true
+	case CapabilitiesAllowedFieldsMaterial:
+		return true
+	case CapabilitiesAllowedFieldsRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAvailableDomains.
+const (
+	CapabilitiesAvailableDomainsBilling      CapabilitiesAvailableDomains = "billing"
+	CapabilitiesAvailableDomainsCatalog      CapabilitiesAvailableDomains = "catalog"
+	CapabilitiesAvailableDomainsGroups       CapabilitiesAvailableDomains = "groups"
+	CapabilitiesAvailableDomainsProfiles     CapabilitiesAvailableDomains = "profiles"
+	CapabilitiesAvailableDomainsResources    CapabilitiesAvailableDomains = "resources"
+	CapabilitiesAvailableDomainsReviews      CapabilitiesAvailableDomains = "reviews"
+	CapabilitiesAvailableDomainsVerification CapabilitiesAvailableDomains = "verification"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAvailableDomains enum.
+func (e CapabilitiesAvailableDomains) Valid() bool {
+	switch e {
+	case CapabilitiesAvailableDomainsBilling:
+		return true
+	case CapabilitiesAvailableDomainsCatalog:
+		return true
+	case CapabilitiesAvailableDomainsGroups:
+		return true
+	case CapabilitiesAvailableDomainsProfiles:
+		return true
+	case CapabilitiesAvailableDomainsResources:
+		return true
+	case CapabilitiesAvailableDomainsReviews:
+		return true
+	case CapabilitiesAvailableDomainsVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAvailableKinds.
+const (
+	CapabilitiesAvailableKindsAccount   CapabilitiesAvailableKinds = "account"
+	CapabilitiesAvailableKindsName      CapabilitiesAvailableKinds = "name"
+	CapabilitiesAvailableKindsQq        CapabilitiesAvailableKinds = "qq"
+	CapabilitiesAvailableKindsStudentId CapabilitiesAvailableKinds = "student_id"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAvailableKinds enum.
+func (e CapabilitiesAvailableKinds) Valid() bool {
+	switch e {
+	case CapabilitiesAvailableKindsAccount:
+		return true
+	case CapabilitiesAvailableKindsName:
+		return true
+	case CapabilitiesAvailableKindsQq:
+		return true
+	case CapabilitiesAvailableKindsStudentId:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FieldCategory.
 const (
 	FieldCategoryBusiness    FieldCategory = "business"
@@ -44,31 +158,31 @@ func (e FieldCategory) Valid() bool {
 
 // Defines values for QueryDomains.
 const (
-	Billing      QueryDomains = "billing"
-	Catalog      QueryDomains = "catalog"
-	Groups       QueryDomains = "groups"
-	Profiles     QueryDomains = "profiles"
-	Resources    QueryDomains = "resources"
-	Reviews      QueryDomains = "reviews"
-	Verification QueryDomains = "verification"
+	QueryDomainsBilling      QueryDomains = "billing"
+	QueryDomainsCatalog      QueryDomains = "catalog"
+	QueryDomainsGroups       QueryDomains = "groups"
+	QueryDomainsProfiles     QueryDomains = "profiles"
+	QueryDomainsResources    QueryDomains = "resources"
+	QueryDomainsReviews      QueryDomains = "reviews"
+	QueryDomainsVerification QueryDomains = "verification"
 )
 
 // Valid indicates whether the value is a known member of the QueryDomains enum.
 func (e QueryDomains) Valid() bool {
 	switch e {
-	case Billing:
+	case QueryDomainsBilling:
 		return true
-	case Catalog:
+	case QueryDomainsCatalog:
 		return true
-	case Groups:
+	case QueryDomainsGroups:
 		return true
-	case Profiles:
+	case QueryDomainsProfiles:
 		return true
-	case Resources:
+	case QueryDomainsResources:
 		return true
-	case Reviews:
+	case QueryDomainsReviews:
 		return true
-	case Verification:
+	case QueryDomainsVerification:
 		return true
 	default:
 		return false
@@ -101,22 +215,22 @@ func (e QueryFields) Valid() bool {
 
 // Defines values for QueryKind.
 const (
-	Account   QueryKind = "account"
-	Name      QueryKind = "name"
-	Qq        QueryKind = "qq"
-	StudentId QueryKind = "student_id"
+	QueryKindAccount   QueryKind = "account"
+	QueryKindName      QueryKind = "name"
+	QueryKindQq        QueryKind = "qq"
+	QueryKindStudentId QueryKind = "student_id"
 )
 
 // Valid indicates whether the value is a known member of the QueryKind enum.
 func (e QueryKind) Valid() bool {
 	switch e {
-	case Account:
+	case QueryKindAccount:
 		return true
-	case Name:
+	case QueryKindName:
 		return true
-	case Qq:
+	case QueryKindQq:
 		return true
-	case StudentId:
+	case QueryKindStudentId:
 		return true
 	default:
 		return false
@@ -171,6 +285,45 @@ type Candidate struct {
 type CandidateGroup struct {
 	Candidate Candidate `json:"candidate"`
 	Items     []Record  `json:"items"`
+}
+
+// Capabilities defines model for Capabilities.
+type Capabilities struct {
+	// AllowedDomains Domains authorized for the current principal within the evaluated scope.
+	AllowedDomains []CapabilitiesAllowedDomains `json:"allowed_domains"`
+
+	// AllowedFields Sensitive field categories authorized for the current principal across the evaluated scope.
+	AllowedFields []CapabilitiesAllowedFields `json:"allowed_fields"`
+
+	// AuditReadable Whether the current principal may read audit logs in the evaluated scope on the current channel.
+	AuditReadable bool `json:"audit_readable"`
+
+	// AvailableDomains Domains with registered providers on the current host.
+	AvailableDomains []CapabilitiesAvailableDomains `json:"available_domains"`
+
+	// AvailableKinds Query lead kinds currently supported on the host.
+	AvailableKinds []CapabilitiesAvailableKinds `json:"available_kinds"`
+
+	// BotEnabled Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope.
+	BotEnabled bool  `json:"bot_enabled"`
+	Scope      Scope `json:"scope"`
+}
+
+// CapabilitiesAllowedDomains defines model for Capabilities.AllowedDomains.
+type CapabilitiesAllowedDomains string
+
+// CapabilitiesAllowedFields defines model for Capabilities.AllowedFields.
+type CapabilitiesAllowedFields string
+
+// CapabilitiesAvailableDomains defines model for Capabilities.AvailableDomains.
+type CapabilitiesAvailableDomains string
+
+// CapabilitiesAvailableKinds defines model for Capabilities.AvailableKinds.
+type CapabilitiesAvailableKinds string
+
+// CapabilitiesRequest defines model for CapabilitiesRequest.
+type CapabilitiesRequest struct {
+	Scope *Scope `json:"scope,omitempty"`
 }
 
 // Error defines model for Error.
@@ -244,6 +397,9 @@ type Scope struct {
 
 // QueryInformationAuditJSONRequestBody defines body for QueryInformationAudit for application/json ContentType.
 type QueryInformationAuditJSONRequestBody = AuditFilter
+
+// QueryInformationCapabilitiesJSONRequestBody defines body for QueryInformationCapabilities for application/json ContentType.
+type QueryInformationCapabilitiesJSONRequestBody = CapabilitiesRequest
 
 // QueryInformationJSONRequestBody defines body for QueryInformation for application/json ContentType.
 type QueryInformationJSONRequestBody = Query
@@ -334,6 +490,18 @@ type ClientInterface interface {
 	// Authenticated principal and delivery channel are supplied by trusted host middleware. Query values must not be logged. Sensitive data is released only after audit commits.
 	QueryInformationAudit(ctx context.Context, body QueryInformationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// QueryInformationCapabilitiesWithBody performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	QueryInformationCapabilitiesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// QueryInformationCapabilities performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	QueryInformationCapabilities(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// QueryInformationWithBody performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -369,6 +537,38 @@ func (c *Client) QueryInformationAuditWithBody(ctx context.Context, contentType 
 // Authenticated principal and delivery channel are supplied by trusted host middleware. Query values must not be logged. Sensitive data is released only after audit commits.
 func (c *Client) QueryInformationAudit(ctx context.Context, body QueryInformationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewQueryInformationAuditRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// QueryInformationCapabilitiesWithBody performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+// with any type of body and a specified content type.
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+func (c *Client) QueryInformationCapabilitiesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryInformationCapabilitiesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// QueryInformationCapabilities performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+func (c *Client) QueryInformationCapabilities(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryInformationCapabilitiesRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -432,6 +632,46 @@ func NewQueryInformationAuditRequestWithBody(server string, contentType string, 
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/information-query/audit/query")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewQueryInformationCapabilitiesRequest calls the generic QueryInformationCapabilities builder with application/json body
+func NewQueryInformationCapabilitiesRequest(server string, body QueryInformationCapabilitiesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewQueryInformationCapabilitiesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewQueryInformationCapabilitiesRequestWithBody constructs an http.Request for the QueryInformationCapabilities method, with any body, and a specified content type
+func NewQueryInformationCapabilitiesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/information-query/capabilities")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -549,6 +789,20 @@ type ClientWithResponsesInterface interface {
 	// Authenticated principal and delivery channel are supplied by trusted host middleware. Query values must not be logged. Sensitive data is released only after audit commits.
 	QueryInformationAuditWithResponse(ctx context.Context, body QueryInformationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationAuditResponse, error)
 
+	// QueryInformationCapabilitiesWithBodyWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	QueryInformationCapabilitiesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error)
+
+	// QueryInformationCapabilitiesWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	QueryInformationCapabilitiesWithResponse(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error)
+
 	// QueryInformationWithBodyWithResponse performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -627,6 +881,75 @@ func (r QueryInformationAuditResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r QueryInformationAuditResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type QueryInformationCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Capabilities
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON200() *Capabilities {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r QueryInformationCapabilitiesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r QueryInformationCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r QueryInformationCapabilitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r QueryInformationCapabilitiesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -728,6 +1051,32 @@ func (c *ClientWithResponses) QueryInformationAuditWithResponse(ctx context.Cont
 	return ParseQueryInformationAuditResponse(rsp)
 }
 
+// QueryInformationCapabilitiesWithBodyWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+// with any type of body and a specified content type.
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) QueryInformationCapabilitiesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error) {
+	rsp, err := c.QueryInformationCapabilitiesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryInformationCapabilitiesResponse(rsp)
+}
+
+// QueryInformationCapabilitiesWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+func (c *ClientWithResponses) QueryInformationCapabilitiesWithResponse(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error) {
+	rsp, err := c.QueryInformationCapabilities(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryInformationCapabilitiesResponse(rsp)
+}
+
 // QueryInformationWithBodyWithResponse performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
 // with any type of body and a specified content type.
 //
@@ -770,6 +1119,60 @@ func ParseQueryInformationAuditResponse(rsp *http.Response) (*QueryInformationAu
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest AuditPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseQueryInformationCapabilitiesResponse parses an HTTP response from a QueryInformationCapabilitiesWithResponse call
+func ParseQueryInformationCapabilitiesResponse(rsp *http.Response) (*QueryInformationCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &QueryInformationCapabilitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Capabilities
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

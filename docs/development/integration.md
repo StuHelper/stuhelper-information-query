@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -12,6 +12,7 @@ updated: 2026-11-09
 | --- | --- | --- |
 | POST | `/api/v1/information-query/query` | 按线索解析候选，再按账号查询业务域 |
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
+| POST | `/api/v1/information-query/capabilities` | 当前操作者在指定范围下的只读能力与装配预检 |
 
 OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。student_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate 与 items，候选保留 account、source、current、changed_at、scope 和掩码 label。
 
@@ -24,6 +25,8 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每次最多请求 700 条业务记录和 50 个候选，字段文本累计限制为 1 MiB。预算耗尽可以返回短页和 next_cursor，满页后的最后一次查询可能为空。客户端持续读取到 next_cursor 为空。
 
 已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
+
+capabilities 接收可选 scope（默认全局范围），返回当前操作者可查的 allowed_domains、allowed_fields、audit_readable、bot_enabled 以及宿主已装配的 available_domains、available_kinds，不追加审计记录。
 
 ## 端口与装配
 

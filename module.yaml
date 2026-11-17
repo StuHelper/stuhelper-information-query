@@ -36,6 +36,8 @@ scenario_tests:
   IQ-04:
     - resolver_test.go#TestResolverFailureAndIsolation
     - service_test.go#TestScopeAndDomainIsolation
+    - service_test.go#TestOperatorCapabilitiesPreflight
+    - httpapi/handler_test.go#TestCapabilitiesEndpointSDKIntegration
   IQ-05:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:

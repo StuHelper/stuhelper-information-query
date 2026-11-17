@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/information-query/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope. */
+        post: operations["queryInformationCapabilities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -127,6 +144,24 @@ export interface components {
         CandidateGroup: {
             candidate: components["schemas"]["Candidate"];
             items: components["schemas"]["Record"][];
+        };
+        CapabilitiesRequest: {
+            scope?: components["schemas"]["Scope"];
+        };
+        Capabilities: {
+            scope: components["schemas"]["Scope"];
+            /** @description Domains authorized for the current principal within the evaluated scope. */
+            allowed_domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
+            /** @description Sensitive field categories authorized for the current principal across the evaluated scope. */
+            allowed_fields: ("identity" | "document" | "material" | "refund_payee")[];
+            /** @description Domains with registered providers on the current host. */
+            available_domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
+            /** @description Query lead kinds currently supported on the host. */
+            available_kinds: ("name" | "student_id" | "qq" | "account")[];
+            /** @description Whether the current principal may read audit logs in the evaluated scope on the current channel. */
+            audit_readable: boolean;
+            /** @description Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope. */
+            bot_enabled: boolean;
         };
     };
     responses: never;
@@ -247,6 +282,66 @@ export interface operations {
                 };
             };
             /** @description Dependency or audit unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    queryInformationCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapabilitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Dependency unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

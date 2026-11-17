@@ -140,6 +140,74 @@
           }
         }
       }
+    },
+    "/api/v1/information-query/capabilities": {
+      "post": {
+        "operationId": "queryInformationCapabilities",
+        "description": "Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilitiesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "security": [
@@ -542,6 +610,103 @@
         "required": [
           "candidate",
           "items"
+        ]
+      },
+      "CapabilitiesRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "allowed_domains": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ]
+            },
+            "description": "Domains authorized for the current principal within the evaluated scope."
+          },
+          "allowed_fields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "identity",
+                "document",
+                "material",
+                "refund_payee"
+              ]
+            },
+            "description": "Sensitive field categories authorized for the current principal across the evaluated scope."
+          },
+          "available_domains": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ]
+            },
+            "description": "Domains with registered providers on the current host."
+          },
+          "available_kinds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "student_id",
+                "qq",
+                "account"
+              ]
+            },
+            "description": "Query lead kinds currently supported on the host."
+          },
+          "audit_readable": {
+            "type": "boolean",
+            "description": "Whether the current principal may read audit logs in the evaluated scope on the current channel."
+          },
+          "bot_enabled": {
+            "type": "boolean",
+            "description": "Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope."
+          }
+        },
+        "required": [
+          "scope",
+          "allowed_domains",
+          "allowed_fields",
+          "available_domains",
+          "available_kinds",
+          "audit_readable",
+          "bot_enabled"
         ]
       }
     },

@@ -201,3 +201,59 @@ func recordCount(out iq.Result) int {
 	}
 	return n
 }
+
+func TestOperatorCapabilitiesPreflight(t *testing.T) {
+	s, r, a, _, _ := fixture()
+	s.Resolvers = map[string]iq.Resolver{"name": nil, "qq": dummyResolver{}}
+	a.scope = admin.Scope{School: "school-a", Group: "*", Module: "profiles"}
+	a.caps = map[string]bool{
+		"information-query.profiles.read": true,
+		"information-query.identity.read": true,
+	}
+	evalScope := admin.Scope{School: "school-a", Group: "*", Module: "*"}
+	caps, err := s.Capabilities(context.Background(), actor, iq.Delivery{Channel: "admin"}, iq.CapabilitiesRequest{Scope: &evalScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.records) != 0 {
+		t.Fatalf("capabilities must not append audit records, got %d", len(r.records))
+	}
+	if len(caps.AllowedDomains) != 1 || caps.AllowedDomains[0] != "profiles" {
+		t.Fatalf("unexpected allowed domains: %+v", caps.AllowedDomains)
+	}
+	if len(caps.AllowedFields) != 1 || caps.AllowedFields[0] != "identity" {
+		t.Fatalf("unexpected allowed fields: %+v", caps.AllowedFields)
+	}
+	if len(caps.AvailableDomains) != 1 || caps.AvailableDomains[0] != "profiles" {
+		t.Fatalf("unexpected available domains: %+v", caps.AvailableDomains)
+	}
+	if len(caps.AvailableKinds) != 2 || caps.AvailableKinds[0] != "qq" || caps.AvailableKinds[1] != "account" {
+		t.Fatalf("unexpected available kinds: %+v", caps.AvailableKinds)
+	}
+	if caps.AuditReadable || caps.BotEnabled {
+		t.Fatalf("unexpected audit/bot flags: %+v", caps)
+	}
+	// Using preflight allowed_domains + allowed_fields directly succeeds without 403.
+	out, err := s.Query(context.Background(), actor, "req-ok", iq.Delivery{Channel: "admin"}, iq.Query{
+		Kind:    "account",
+		Value:   "user:1",
+		Scope:   evalScope,
+		Domains: caps.AllowedDomains,
+		Fields:  caps.AllowedFields,
+		Purpose: "preflight-verified",
+		Limit:   10,
+	})
+	if err != nil || recordCount(out) != 1 {
+		t.Fatalf("query with preflight capabilities failed: %+v %v", out, err)
+	}
+	// Bot channel without BotEnabled is rejected on capabilities too.
+	if _, err = s.Capabilities(context.Background(), actor, iq.Delivery{Channel: "bot_group", Group: "g1"}, iq.CapabilitiesRequest{}); !errors.Is(err, iq.ErrForbidden) {
+		t.Fatalf("expected bot capabilities forbidden when disabled, got %v", err)
+	}
+}
+
+type dummyResolver struct{}
+
+func (dummyResolver) Resolve(context.Context, account.Principal, iq.Lead) ([]iq.Candidate, string, error) {
+	return nil, "", nil
+}
