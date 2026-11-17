@@ -184,9 +184,11 @@
             "enum": [
               "name",
               "student_id",
+              "staff_id",
               "qq",
               "account"
-            ]
+            ],
+            "description": "Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key."
           },
           "value": {
             "type": "string",
@@ -380,7 +382,8 @@
           },
           "after": {
             "type": "string",
-            "pattern": "^[0-9]*$"
+            "pattern": "^[0-9]*$",
+            "description": "Optional audit pagination cursor; omitted or empty string starts from the first page."
           },
           "limit": {
             "type": "integer",
@@ -391,7 +394,6 @@
         "required": [
           "scope",
           "purpose",
-          "after",
           "limit"
         ]
       },
@@ -513,7 +515,7 @@
             "items": {
               "$ref": "#/components/schemas/Field"
             },
-            "description": "Masked distinguishing fields only."
+            "description": "Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms."
           }
         },
         "required": [
@@ -537,11 +539,16 @@
             "items": {
               "$ref": "#/components/schemas/Record"
             }
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "True when this candidate has unreturned domain records continuing onto a subsequent page."
           }
         },
         "required": [
           "candidate",
-          "items"
+          "items",
+          "has_more"
         ]
       }
     },

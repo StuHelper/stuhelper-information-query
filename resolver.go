@@ -132,7 +132,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		if e != nil {
 			return out, e
 		}
-		out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items})
+		out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items, HasMore: page.NextCursor != ""})
 		remaining -= len(page.Items)
 		if page.NextCursor != "" {
 			cursor.Record = page.NextCursor

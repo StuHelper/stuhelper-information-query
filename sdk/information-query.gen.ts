@@ -48,8 +48,11 @@ export interface components {
             module: string;
         };
         Query: {
-            /** @enum {string} */
-            kind: "name" | "student_id" | "qq" | "account";
+            /**
+             * @description Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
+             * @enum {string}
+             */
+            kind: "name" | "student_id" | "staff_id" | "qq" | "account";
             value: string;
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
@@ -90,7 +93,8 @@ export interface components {
         AuditFilter: {
             scope: components["schemas"]["Scope"];
             purpose: string;
-            after: string;
+            /** @description Optional audit pagination cursor; omitted or empty string starts from the first page. */
+            after?: string;
             limit: number;
         };
         Audit: {
@@ -121,12 +125,14 @@ export interface components {
             /** Format: date-time */
             changed_at: string;
             scope: components["schemas"]["Scope"];
-            /** @description Masked distinguishing fields only. */
+            /** @description Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms. */
             label: components["schemas"]["Field"][];
         };
         CandidateGroup: {
             candidate: components["schemas"]["Candidate"];
             items: components["schemas"]["Record"][];
+            /** @description True when this candidate has unreturned domain records continuing onto a subsequent page. */
+            has_more: boolean;
         };
     };
     responses: never;

@@ -104,6 +104,7 @@ const (
 	Account   QueryKind = "account"
 	Name      QueryKind = "name"
 	Qq        QueryKind = "qq"
+	StaffId   QueryKind = "staff_id"
 	StudentId QueryKind = "student_id"
 )
 
@@ -115,6 +116,8 @@ func (e QueryKind) Valid() bool {
 	case Name:
 		return true
 	case Qq:
+		return true
+	case StaffId:
 		return true
 	case StudentId:
 		return true
@@ -143,10 +146,11 @@ type Audit struct {
 
 // AuditFilter defines model for AuditFilter.
 type AuditFilter struct {
-	After   string `json:"after"`
-	Limit   int    `json:"limit"`
-	Purpose string `json:"purpose"`
-	Scope   Scope  `json:"scope"`
+	// After Optional audit pagination cursor; omitted or empty string starts from the first page.
+	After   *string `json:"after,omitempty"`
+	Limit   int     `json:"limit"`
+	Purpose string  `json:"purpose"`
+	Scope   Scope   `json:"scope"`
 }
 
 // AuditPage defines model for AuditPage.
@@ -161,7 +165,7 @@ type Candidate struct {
 	ChangedAt time.Time `json:"changed_at"`
 	Current   bool      `json:"current"`
 
-	// Label Masked distinguishing fields only.
+	// Label Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms.
 	Label  []Field `json:"label"`
 	Scope  Scope   `json:"scope"`
 	Source string  `json:"source"`
@@ -170,7 +174,10 @@ type Candidate struct {
 // CandidateGroup defines model for CandidateGroup.
 type CandidateGroup struct {
 	Candidate Candidate `json:"candidate"`
-	Items     []Record  `json:"items"`
+
+	// HasMore True when this candidate has unreturned domain records continuing onto a subsequent page.
+	HasMore bool     `json:"has_more"`
+	Items   []Record `json:"items"`
 }
 
 // Error defines model for Error.
@@ -197,7 +204,9 @@ type Query struct {
 
 	// Fields Sensitive categories explicitly requested; omitted means masked identity fields only.
 	Fields *[]QueryFields `json:"fields,omitempty"`
-	Kind   QueryKind      `json:"kind"`
+
+	// Kind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
+	Kind QueryKind `json:"kind"`
 
 	// Limit Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page.
 	Limit   int    `json:"limit"`
@@ -212,7 +221,7 @@ type QueryDomains string
 // QueryFields defines model for Query.Fields.
 type QueryFields string
 
-// QueryKind defines model for Query.Kind.
+// QueryKind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
 type QueryKind string
 
 // Record defines model for Record.

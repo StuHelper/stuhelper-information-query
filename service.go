@@ -20,7 +20,7 @@ var categories = []string{"identity", "document", "material", "refund_payee"}
 type Service struct {
 	Auth       Authorizer
 	Repo       Repository
-	Resolvers  map[string]Resolver // name/student_id: verification; qq: qq-binding
+	Resolvers  map[string]Resolver // name/student_id/staff_id: verification; qq: qq-binding
 	Providers  map[string]Provider // immutable after host assembly
 	BotEnabled bool                // disabled by default, including platform administrators
 	Now        func() time.Time
@@ -101,10 +101,10 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "staff_id", "qq", "account"}, q.Kind) {
 		return out, ErrInvalid
 	}
-	if q.Kind == "student_id" && q.Scope.School == "*" {
+	if (q.Kind == "student_id" || q.Kind == "staff_id") && q.Scope.School == "*" {
 		return out, ErrInvalid
 	}
 	if d.Channel != "admin" {

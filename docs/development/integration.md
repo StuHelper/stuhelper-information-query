@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -13,7 +13,7 @@ updated: 2026-11-09
 | POST | `/api/v1/information-query/query` | 按线索解析候选，再按账号查询业务域 |
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
 
-OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。student_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate 与 items，候选保留 account、source、current、changed_at、scope 和掩码 label。
+OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、staff_id、qq、account。student_id 与 staff_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate、items 与 has_more，候选保留 account、source、current、changed_at、scope 和区分标签 label。
 
 0.2.0 具有不兼容变化：subject 改为 account，student_number 改为 student_id，退款收款字段类别改为 refund_payee，平铺 items 改为 groups。消费者需重新生成 SDK，更新分组展示并清除旧游标。两个 HTTP 路径保持不变。
 
@@ -35,9 +35,9 @@ PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 
 Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。Account 是 issuer 与 subject 组成的完整账号键，不得以昵称、学号或 QQ 值代替。
 
-Service.Resolvers 按 kind 装配：name、student_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
+Service.Resolvers 按 kind 装配：name、student_id、staff_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
 
-Resolver 的 Label 只含区分候选所需的掩码字段，不得把原始线索放入来源、账号键或游标。编排再次检查候选范围、掩码和字段大小。候选披露之前检查所有申请域的权限，并在返回前提交审计。
+Resolver 的 Label 仅含区分重名与师生身份所需的掩码字段或非敏感业务标签（如院系、学生/教师角色，均设 masked=true），不得把原始线索放入来源、账号键或游标。编排再次检查候选范围、掩码和字段大小。候选披露之前检查所有申请域的权限，并在返回前提交审计。
 
 Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整账号键，先授权、按范围过滤，再按 ID 升序分页。After 是排他记录 ID，Limit 上限 100。记录 ID 使用 `<domain>:<id>`，Subject 必须与查询账号一致。
 

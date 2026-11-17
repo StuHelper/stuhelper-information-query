@@ -75,15 +75,19 @@ func resolvedFixture() (*iq.Service, *resolver, *accountProvider, iq.Query) {
 	q.Value = "same name"
 	r := &resolver{candidates: []iq.Candidate{}}
 	for i, account := range []string{"issuer:alice", "issuer:bob"} {
-		r.candidates = append(r.candidates, iq.Candidate{Account: account, Source: "verification", Current: i == 0, ChangedAt: time.Unix(100, 0), Scope: q.Scope, Label: []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}}})
+		role := "student"
+		if i == 1 {
+			role = "teacher"
+		}
+		r.candidates = append(r.candidates, iq.Candidate{Account: account, Source: "verification", Current: i == 0, ChangedAt: time.Unix(100, 0), Scope: q.Scope, Label: []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}, {Name: "department", Category: "business", Value: "计算机学院", Masked: true}, {Name: "role", Category: "business", Value: role, Masked: true}}})
 	}
 	p := &accountProvider{domain: "profiles"}
 	s.Providers = map[string]iq.Provider{"profiles": p}
-	s.Resolvers = map[string]iq.Resolver{"name": r, "student_id": r, "qq": r}
+	s.Resolvers = map[string]iq.Resolver{"name": r, "student_id": r, "staff_id": r, "qq": r}
 	return s, r, p, q
 }
 func TestResolveKindsGroupsAndHistory(t *testing.T) {
-	for _, kind := range []string{"name", "student_id", "qq"} {
+	for _, kind := range []string{"name", "student_id", "staff_id", "qq"} {
 		t.Run(kind, func(t *testing.T) {
 			s, r, p, q := resolvedFixture()
 			q.Kind = kind
@@ -199,5 +203,24 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 	out, e = run(s, q)
 	if e != nil || p.requested > 700 || r.calls > 50 || out.NextCursor == "" {
 		t.Fatal("work bound", e, p.requested, r.calls)
+	}
+}
+
+func TestCandidateGroupHasMoreFlag(t *testing.T) {
+	s, _, _, q := resolvedFixture()
+	// Each candidate has 3 records in profiles. Limit=2 truncates alice on page 1 (HasMore=true),
+	// then page 2 finishes alice (1 item, HasMore=false) and starts bob (1 item, HasMore=true).
+	q.Limit = 2
+	page1, err := run(s, q)
+	if err != nil || len(page1.Groups) != 1 || len(page1.Groups[0].Items) != 2 || !page1.Groups[0].HasMore {
+		t.Fatalf("page 1 expected single candidate with HasMore=true, got %+v err=%v", page1, err)
+	}
+	q.After = page1.NextCursor
+	page2, err := run(s, q)
+	if err != nil || len(page2.Groups) != 2 {
+		t.Fatalf("page 2 expected 2 groups, got %+v err=%v", page2, err)
+	}
+	if page2.Groups[0].HasMore || !page2.Groups[1].HasMore {
+		t.Fatalf("page 2 expected [HasMore=false, HasMore=true], got [%v, %v]", page2.Groups[0].HasMore, page2.Groups[1].HasMore)
 	}
 }

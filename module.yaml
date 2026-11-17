@@ -51,5 +51,6 @@ scenario_tests:
   IQ-10:
     - resolver_test.go#TestCompositePagination
     - resolver_test.go#TestCandidateChangeAndWorkBound
+    - resolver_test.go#TestCandidateGroupHasMoreFlag
   IQ-11:
     - postgres/repository_test.go#TestBoundedPruneAndMaintenancePrivileges
