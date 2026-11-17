@@ -237,6 +237,12 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 	if !clean(id, 128) || !clean(f.Purpose, 512) || !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 {
 		return out, ErrInvalid
 	}
+	if (f.Actor != "" && !clean(f.Actor, 2048)) || (f.Target != "" && !clean(f.Target, 2048)) || (f.Action != "" && !clean(f.Action, 128)) || (f.Result != "" && !clean(f.Result, 128)) || (f.Channel != "" && !clean(f.Channel, 128)) {
+		return out, ErrInvalid
+	}
+	if (f.CreatedFrom != nil && f.CreatedFrom.IsZero()) || (f.CreatedUntil != nil && f.CreatedUntil.IsZero()) || (f.CreatedFrom != nil && f.CreatedUntil != nil && f.CreatedFrom.After(*f.CreatedUntil)) {
+		return out, ErrInvalid
+	}
 	if f.After != "" {
 		n, e := strconv.ParseInt(f.After, 10, 64)
 		if e != nil || n < 0 {

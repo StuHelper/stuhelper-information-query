@@ -143,10 +143,34 @@ type Audit struct {
 
 // AuditFilter defines model for AuditFilter.
 type AuditFilter struct {
-	After   string `json:"after"`
-	Limit   int    `json:"limit"`
+	// Action Optional audit action filter.
+	Action *string `json:"action,omitempty"`
+
+	// Actor Optional exact operator account key filter.
+	Actor *string `json:"actor,omitempty"`
+
+	// After Exclusive upper-bound audit ID cursor for newest-first (id DESC) pagination; empty string starts from the latest record.
+	After string `json:"after"`
+
+	// Channel Optional delivery channel filter.
+	Channel *string `json:"channel,omitempty"`
+
+	// CreatedFrom Optional inclusive lower bound on audit creation time.
+	CreatedFrom *time.Time `json:"created_from,omitempty"`
+
+	// CreatedUntil Optional inclusive upper bound on audit creation time.
+	CreatedUntil *time.Time `json:"created_until,omitempty"`
+	Limit        int        `json:"limit"`
+
+	// Purpose Reason for inspecting audit records during this request; recorded in the audit log and not used as a search filter.
 	Purpose string `json:"purpose"`
-	Scope   Scope  `json:"scope"`
+
+	// Result Optional execution result filter.
+	Result *string `json:"result,omitempty"`
+	Scope  Scope   `json:"scope"`
+
+	// Target Optional target account key matched against recorded audit targets.
+	Target *string `json:"target,omitempty"`
 }
 
 // AuditPage defines model for AuditPage.

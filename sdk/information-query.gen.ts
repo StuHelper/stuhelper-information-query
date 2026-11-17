@@ -89,9 +89,31 @@ export interface components {
         };
         AuditFilter: {
             scope: components["schemas"]["Scope"];
+            /** @description Reason for inspecting audit records during this request; recorded in the audit log and not used as a search filter. */
             purpose: string;
+            /** @description Exclusive upper-bound audit ID cursor for newest-first (id DESC) pagination; empty string starts from the latest record. */
             after: string;
             limit: number;
+            /** @description Optional exact operator account key filter. */
+            actor?: string;
+            /** @description Optional target account key matched against recorded audit targets. */
+            target?: string;
+            /** @description Optional audit action filter. */
+            action?: string;
+            /** @description Optional execution result filter. */
+            result?: string;
+            /** @description Optional delivery channel filter. */
+            channel?: string;
+            /**
+             * Format: date-time
+             * @description Optional inclusive lower bound on audit creation time.
+             */
+            created_from?: string;
+            /**
+             * Format: date-time
+             * @description Optional inclusive upper bound on audit creation time.
+             */
+            created_until?: string;
         };
         Audit: {
             id: string;

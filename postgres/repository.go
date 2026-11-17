@@ -5,9 +5,11 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"strconv"
+	"strings"
 )
 
 //go:embed migrations/*.sql
@@ -42,14 +44,60 @@ func (r Repository) Append(ctx context.Context, a iq.Audit) error {
 	return e
 }
 func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPage, err error) {
-	after := int64(0)
-	if f.After != "" {
-		after, err = strconv.ParseInt(f.After, 10, 64)
-		if err != nil {
-			return out, err
-		}
+	conds := make([]string, 0, 11)
+	args := make([]any, 0, 12)
+	add := func(expr string, val any) {
+		args = append(args, val)
+		conds = append(conds, fmt.Sprintf(expr, len(args)))
 	}
-	rows, err := r.Pool.Query(ctx, `SELECT id,body FROM information_query.audit WHERE id>$1 AND ($2='*' OR school=$2) AND ($3='*' OR group_id=$3) AND ($4='*' OR module=$4) ORDER BY id LIMIT $5`, after, f.Scope.School, f.Scope.Group, f.Scope.Module, f.Limit)
+	if f.After != "" {
+		after, e := strconv.ParseInt(f.After, 10, 64)
+		if e != nil {
+			return out, e
+		}
+		add("id < $%d", after)
+	}
+	if f.Scope.School != "*" {
+		add("school = $%d", f.Scope.School)
+	}
+	if f.Scope.Group != "*" {
+		add("group_id = $%d", f.Scope.Group)
+	}
+	if f.Scope.Module != "*" {
+		add("module = $%d", f.Scope.Module)
+	}
+	if f.Actor != "" {
+		add("body->>'actor' = $%d", f.Actor)
+	}
+	if f.Target != "" {
+		targetJSON, e := json.Marshal([]string{f.Target})
+		if e != nil {
+			return out, e
+		}
+		add("(body->'targets') @> $%d::jsonb", string(targetJSON))
+	}
+	if f.Action != "" {
+		add("body->>'action' = $%d", f.Action)
+	}
+	if f.Result != "" {
+		add("body->>'result' = $%d", f.Result)
+	}
+	if f.Channel != "" {
+		add("body->>'channel' = $%d", f.Channel)
+	}
+	if f.CreatedFrom != nil {
+		add("created_at >= $%d", f.CreatedFrom.UTC())
+	}
+	if f.CreatedUntil != nil {
+		add("created_at <= $%d", f.CreatedUntil.UTC())
+	}
+	args = append(args, f.Limit)
+	query := `SELECT id,body FROM information_query.audit`
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", len(args))
+	rows, err := r.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return out, err
 	}

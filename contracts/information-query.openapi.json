@@ -376,16 +376,53 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "description": "Reason for inspecting audit records during this request; recorded in the audit log and not used as a search filter."
           },
           "after": {
             "type": "string",
-            "pattern": "^[0-9]*$"
+            "pattern": "^[0-9]*$",
+            "description": "Exclusive upper-bound audit ID cursor for newest-first (id DESC) pagination; empty string starts from the latest record."
           },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional exact operator account key filter."
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional target account key matched against recorded audit targets."
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional audit action filter."
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional execution result filter."
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional delivery channel filter."
+          },
+          "created_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive lower bound on audit creation time."
+          },
+          "created_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive upper bound on audit creation time."
           }
         },
         "required": [
