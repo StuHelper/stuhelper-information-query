@@ -191,7 +191,8 @@
           "value": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 2048,
+            "description": "Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -255,7 +256,21 @@
           "domains",
           "purpose",
           "limit"
-        ]
+        ],
+        "not": {
+          "properties": {
+            "kind": {
+              "not": {
+                "enum": [
+                  "account"
+                ]
+              }
+            },
+            "value": {
+              "minLength": 257
+            }
+          }
+        }
       },
       "Field": {
         "type": "object",

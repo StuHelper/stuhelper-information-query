@@ -40,6 +40,7 @@ scenario_tests:
   IQ-05:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
+    - account_query_test.go#TestQueryRequiresCanonicalAccount
     - service_test.go#TestSensitiveMaskAuditAndFailure
     - service_test.go#TestUnicodeMultilinePurposeAndControlChars
     - service_test.go#TestAuditFieldsExcludeMaskedAndBusinessAndDeniedResult

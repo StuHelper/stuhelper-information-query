@@ -104,7 +104,7 @@ func (allow) Evaluate(context.Context, account.Principal, string, admin.Scope) e
 type records struct{}
 
 func (records) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
-	return []iq.Record{{ID: "profiles:1", Subject: "user-1", Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Source: "test-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "qq", Category: "identity", Value: "123456789"}}}}, nil
+	return []iq.Record{{ID: "profiles:1", Subject: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Source: "test-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "qq", Category: "identity", Value: "123456789"}}}}, nil
 }
 func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
@@ -122,7 +122,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := iq.Service{Auth: allow{}, Repo: r, Providers: map[string]iq.Provider{"profiles": records{}}}
-	q := iq.Query{Kind: "account", Value: "user-1", Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
+	q := iq.Query{Kind: "account", Value: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
 	out, e := s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "disclosure-request", iq.Delivery{Channel: "bot_group", Group: "g"}, q)
 	if e != iq.ErrForbidden || recordCount(out) != 0 {
 		t.Fatal("bot default", e)
@@ -135,7 +135,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	var count int
 	var raw string
 	e = pool.QueryRow(ctx, `SELECT count(*),string_agg(body::text,'') FROM information_query.audit WHERE body->>'request_id'='disclosure-request'`).Scan(&count, &raw)
-	if e != nil || count != 2 || strings.Contains(raw, "123456789") || !strings.Contains(raw, "user-1") {
+	if e != nil || count != 2 || strings.Contains(raw, "123456789") || !strings.Contains(raw, (account.Principal{Issuer: "test", Subject: "user"}).Key()) {
 		t.Fatal("audit commit/content", count, e)
 	}
 	// A real database rejection must suppress the already-fetched sensitive result.

@@ -60,9 +60,9 @@ func (p *provider) Query(_ context.Context, _ account.Principal, _ iq.Query) ([]
 func fixture() (*iq.Service, *repo, *auth, *provider, iq.Query) {
 	r := &repo{}
 	a := &auth{caps: map[string]bool{"information-query.profiles.read": true}, scope: scope}
-	p := &provider{items: []iq.Record{{ID: "profiles:1", Subject: "user:1", Scope: scope, Source: "qq-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "name", Category: "identity", Value: "同名"}, {Name: "qq", Category: "identity", Value: "123456789"}, {Name: "document", Category: "document", Value: "private-document"}, {Name: "material", Category: "material", Value: "private-material"}, {Name: "refund_payee", Category: "refund_payee", Value: "private-refund"}}}}}
+	p := &provider{items: []iq.Record{{ID: "profiles:1", Subject: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: scope, Source: "qq-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "name", Category: "identity", Value: "同名"}, {Name: "qq", Category: "identity", Value: "123456789"}, {Name: "document", Category: "document", Value: "private-document"}, {Name: "material", Category: "material", Value: "private-material"}, {Name: "refund_payee", Category: "refund_payee", Value: "private-refund"}}}}}
 	s := &iq.Service{Auth: a, Repo: r, Providers: map[string]iq.Provider{"profiles": p}}
-	q := iq.Query{Kind: "account", Value: "user:1", Scope: scope, Domains: []string{"profiles"}, Fields: []string{}, Purpose: "业务核查", Limit: 20}
+	q := iq.Query{Kind: "account", Value: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: scope, Domains: []string{"profiles"}, Fields: []string{}, Purpose: "业务核查", Limit: 20}
 	return s, r, a, p, q
 }
 func run(s *iq.Service, q iq.Query) (iq.Result, error) {

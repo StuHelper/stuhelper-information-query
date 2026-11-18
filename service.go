@@ -35,6 +35,13 @@ func isDisallowedTextControl(r rune) bool {
 func clean(v string, max int) bool {
 	return v != "" && len(v) <= max && utf8.ValidString(v) && !strings.ContainsFunc(v, unicode.IsControl)
 }
+func validQueryValue(kind, value string) bool {
+	if kind == "account" {
+		_, err := account.Parse(value)
+		return err == nil
+	}
+	return utf8.ValidString(value) && value != "" && utf8.RuneCountInString(value) <= 256 && !strings.ContainsFunc(value, unicode.IsControl)
+}
 func cleanText(v string, max int) bool {
 	return v != "" && len(v) <= max*4 && utf8.ValidString(v) && utf8.RuneCountInString(v) <= max && !strings.ContainsFunc(v, isDisallowedTextControl)
 }
@@ -126,7 +133,7 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !cleanText(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !cleanText(q.Purpose, 512) || !validQueryValue(q.Kind, q.Value) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
 		return out, ErrInvalid
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {

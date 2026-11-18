@@ -328,7 +328,9 @@ type Query struct {
 	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed.
 	Purpose string `json:"purpose"`
 	Scope   Scope  `json:"scope"`
-	Value   string `json:"value"`
+
+	// Value Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points.
+	Value string `json:"value"`
 }
 
 // QueryDomains defines model for Query.Domains.

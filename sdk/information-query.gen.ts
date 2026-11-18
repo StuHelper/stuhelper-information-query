@@ -50,6 +50,7 @@ export interface components {
         Query: {
             /** @enum {string} */
             kind: "name" | "student_id" | "qq" | "account";
+            /** @description Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points. */
             value: string;
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];

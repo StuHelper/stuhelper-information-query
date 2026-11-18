@@ -85,7 +85,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 				return out, nil
 			}
 			candidate, next = candidates[0], n
-			if !clean(candidate.Account, 256) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
+			if !validQueryValue("account", candidate.Account) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
 				return out, ErrUnavailable
 			}
 			for _, f := range candidate.Label {
