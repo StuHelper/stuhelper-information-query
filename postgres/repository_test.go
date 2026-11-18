@@ -9,6 +9,7 @@ import (
 	"github.com/StuHelper/stuhelper-platform/admin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -215,5 +216,322 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 	var kept int
 	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE created_at=$1 OR created_at=$2`, cutoff, cutoff.Add(time.Second)).Scan(&kept); e != nil || kept != 2 {
 		t.Fatal("boundary removed", kept, e)
+	}
+}
+
+func TestNilPoolReturnsUnavailable(t *testing.T) {
+	ctx := context.Background()
+	var repo postgres.Repository
+	if e := repo.Migrate(ctx); e != iq.ErrUnavailable {
+		t.Fatalf("Migrate nil pool: got %v, want ErrUnavailable", e)
+	}
+	if e := repo.Append(ctx, iq.Audit{Scope: admin.Global}); e != iq.ErrUnavailable {
+		t.Fatalf("Append nil pool: got %v, want ErrUnavailable", e)
+	}
+	if _, e := repo.Read(ctx, iq.AuditFilter{Scope: admin.Global, Limit: 10}); e != iq.ErrUnavailable {
+		t.Fatalf("Read nil pool: got %v, want ErrUnavailable", e)
+	}
+	var maint postgres.Maintenance
+	if _, e := maint.PruneAudit(ctx, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), 10); e != iq.ErrUnavailable {
+		t.Fatalf("PruneAudit nil pool: got %v, want ErrUnavailable", e)
+	}
+	svc := iq.Service{Auth: allow{}, Repo: postgres.Repository{}}
+	actor := account.Principal{Issuer: "test", Subject: "operator"}
+	if _, e := svc.Audit(ctx, actor, "nil-audit", iq.AuditFilter{Scope: admin.Global, Purpose: "check", Limit: 1}); e != iq.ErrUnavailable {
+		t.Fatalf("Service.Audit nil pool: got %v, want ErrUnavailable", e)
+	}
+}
+
+func TestAuditDescendingPaginationTerminatesUnderSelfAudit(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	nonce := strconv.FormatInt(time.Now().UnixNano(), 36)
+	sc := admin.Scope{School: "a01-school-" + nonce, Group: "a01-group-" + nonce, Module: "profiles"}
+	for _, reqID := range []string{"first-entry", "second-entry"} {
+		if e = r.Append(ctx, iq.Audit{
+			Actor:     "operator",
+			RequestID: reqID,
+			Purpose:   reqID,
+			Scope:     sc,
+			Channel:   "admin",
+			Action:    "query",
+			Result:    "success",
+			Targets:   []string{},
+			Fields:    []string{},
+			Basis:     []string{},
+			CreatedAt: time.Now().UTC(),
+		}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	svc := iq.Service{Auth: allow{}, Repo: r}
+	actor := account.Principal{Issuer: "test", Subject: "auditor"}
+	var purposes []string
+	after := ""
+	for pages := 0; ; pages++ {
+		if pages >= 5 {
+			t.Fatalf("audit pagination entered self-audit loop after %d pages", pages)
+		}
+		page, err := svc.Audit(ctx, actor, "audit-page", iq.AuditFilter{
+			Scope:   sc,
+			Purpose: "audit review",
+			After:   after,
+			Limit:   1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range page.Items {
+			purposes = append(purposes, item.Purpose)
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		after = page.NextCursor
+	}
+	if len(purposes) != 2 || purposes[0] != "second-entry" || purposes[1] != "first-entry" {
+		t.Fatalf("expected newest-first [second-entry first-entry], got %v", purposes)
+	}
+}
+
+type multiSchoolResolver struct {
+	candidates []iq.Candidate
+}
+
+func (m multiSchoolResolver) Resolve(_ context.Context, _ account.Principal, l iq.Lead) ([]iq.Candidate, string, error) {
+	idx := 0
+	if l.After == "1" {
+		idx = 1
+	} else if l.After != "" {
+		return []iq.Candidate{}, "", nil
+	}
+	if idx >= len(m.candidates) {
+		return []iq.Candidate{}, "", nil
+	}
+	next := ""
+	if idx+1 < len(m.candidates) {
+		next = "1"
+	}
+	return []iq.Candidate{m.candidates[idx]}, next, nil
+}
+
+type scopedDomainProvider struct {
+	domain string
+	byAcct map[string]admin.Scope
+}
+
+func (p scopedDomainProvider) Query(_ context.Context, _ account.Principal, q iq.Query) ([]iq.Record, error) {
+	sc, ok := p.byAcct[q.Value]
+	if !ok {
+		return []iq.Record{}, nil
+	}
+	return []iq.Record{{
+		ID:        p.domain + ":1",
+		Subject:   q.Value,
+		Scope:     sc,
+		Source:    p.domain,
+		Current:   true,
+		ChangedAt: time.Unix(200, 0).UTC(),
+		Fields:    []iq.Field{{Name: "status", Category: "business", Value: "ok"}},
+	}}, nil
+}
+
+func TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	nonce := strconv.FormatInt(time.Now().UnixNano(), 36)
+	schoolA, groupA := "a04-school-a-"+nonce, "a04-group-a-"+nonce
+	schoolB, groupB := "a04-school-b-"+nonce, "a04-group-b-"+nonce
+	schoolC := "a04-school-c-" + nonce
+	acctA := account.Principal{Issuer: "https://sso.example", Subject: "student-a"}.Key()
+	acctB := account.Principal{Issuer: "https://sso.example", Subject: "student-b"}.Key()
+	svc := iq.Service{
+		Auth: allow{},
+		Repo: r,
+		Resolvers: map[string]iq.Resolver{
+			"name": multiSchoolResolver{candidates: []iq.Candidate{
+				{
+					Account:   acctA,
+					Source:    "verification",
+					Current:   true,
+					ChangedAt: time.Unix(100, 0).UTC(),
+					Scope:     admin.Scope{School: schoolA, Group: groupA, Module: "*"},
+					Label:     []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}},
+				},
+				{
+					Account:   acctB,
+					Source:    "verification",
+					Current:   true,
+					ChangedAt: time.Unix(100, 0).UTC(),
+					Scope:     admin.Scope{School: schoolB, Group: groupB, Module: "*"},
+					Label:     []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}},
+				},
+			}},
+		},
+		Providers: map[string]iq.Provider{
+			"verification": scopedDomainProvider{
+				domain: "verification",
+				byAcct: map[string]admin.Scope{
+					acctA: {School: schoolA, Group: groupA, Module: "verification"},
+					acctB: {School: schoolB, Group: groupB, Module: "verification"},
+				},
+			},
+			"billing": scopedDomainProvider{
+				domain: "billing",
+				byAcct: map[string]admin.Scope{
+					acctA: {School: "*", Group: "*", Module: "billing"},
+				},
+			},
+		},
+	}
+	actor := account.Principal{Issuer: "https://sso.example", Subject: "platform-admin"}
+	_, err := svc.Query(ctx, actor, "global-multi-domain", iq.Delivery{Channel: "admin"}, iq.Query{
+		Kind:    "name",
+		Value:   "Same Name",
+		Scope:   admin.Global,
+		Domains: []string{"verification", "billing"},
+		Purpose: "cross-school investigation",
+		Limit:   20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// School-A auditor must see the global query and only see acctA (not acctB from school-B).
+	schoolAPage, err := r.Read(ctx, iq.AuditFilter{
+		Scope: admin.Scope{School: schoolA, Group: "*", Module: "*"},
+		Limit: 10,
+	})
+	if err != nil || len(schoolAPage.Items) != 1 {
+		t.Fatalf("school-a auditor missed global query: items=%d err=%v", len(schoolAPage.Items), err)
+	}
+	if len(schoolAPage.Items[0].Targets) != 1 || schoolAPage.Items[0].Targets[0] != acctA {
+		t.Fatalf("expected only acctA in school-a audit view, got %v", schoolAPage.Items[0].Targets)
+	}
+
+	// Group-A auditor must also see the query with only acctA.
+	groupAPage, err := r.Read(ctx, iq.AuditFilter{
+		Scope: admin.Scope{School: "*", Group: groupA, Module: "*"},
+		Limit: 10,
+	})
+	if err != nil || len(groupAPage.Items) != 1 || len(groupAPage.Items[0].Targets) != 1 || groupAPage.Items[0].Targets[0] != acctA {
+		t.Fatalf("group-a auditor view mismatch: %+v err=%v", groupAPage, err)
+	}
+
+	// Billing module auditor must see the multi-domain query (where request Scope.Module was "*").
+	billingPage, err := r.Read(ctx, iq.AuditFilter{
+		Scope: admin.Scope{School: schoolA, Group: "*", Module: "billing"},
+		Limit: 10,
+	})
+	if err != nil || len(billingPage.Items) != 1 || len(billingPage.Items[0].Targets) != 1 || billingPage.Items[0].Targets[0] != acctA {
+		t.Fatalf("billing module auditor missed multi-domain query: %+v err=%v", billingPage, err)
+	}
+
+	// Unrelated school-C auditor must see 0 records.
+	schoolCPage, err := r.Read(ctx, iq.AuditFilter{
+		Scope: admin.Scope{School: schoolC, Group: "*", Module: "*"},
+		Limit: 10,
+	})
+	if err != nil || len(schoolCPage.Items) != 0 {
+		t.Fatalf("unrelated school-c saw records: %+v err=%v", schoolCPage, err)
+	}
+}
+
+func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	nonce := strconv.FormatInt(time.Now().UnixNano(), 36)
+	noiseSchool := "a12-noise-school-" + nonce
+	targetSchool := "a12-target-school-" + nonce
+	for i := 0; i < 400; i++ {
+		sc := admin.Scope{School: noiseSchool, Group: "*", Module: "profiles"}
+		if i == 250 {
+			sc.School = targetSchool
+		}
+		if e = r.Append(ctx, iq.Audit{
+			Actor:     "op",
+			RequestID: "r",
+			Purpose:   "p",
+			Scope:     sc,
+			Channel:   "admin",
+			Action:    "query",
+			Result:    "success",
+			Targets:   []string{},
+			Fields:    []string{},
+			Basis:     []string{},
+			CreatedAt: time.Now().UTC(),
+		}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if _, e = pool.Exec(ctx, `ANALYZE information_query.audit`); e != nil {
+		t.Fatal(e)
+	}
+	page, e := r.Read(ctx, iq.AuditFilter{
+		Scope: admin.Scope{School: targetSchool, Group: "*", Module: "*"},
+		Limit: 10,
+	})
+	if e != nil || len(page.Items) != 1 {
+		t.Fatalf("selective read failed: %+v %v", page, e)
+	}
+	conn, e := pool.Acquire(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer conn.Release()
+	if _, e = conn.Exec(ctx, `SET plan_cache_mode = force_generic_plan`); e != nil {
+		t.Fatal(e)
+	}
+	rows, e := conn.Query(ctx, `EXPLAIN (FORMAT TEXT) SELECT id,body,target_scopes FROM information_query.audit WHERE schools @> ARRAY[$1]::text[] ORDER BY id DESC LIMIT $2`, targetSchool, 10)
+	if e != nil {
+		t.Fatal("expected indexed schools column query:", e)
+	}
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if e = rows.Scan(&line); e != nil {
+			t.Fatal(e)
+		}
+		plan.WriteString(line + "\n")
+	}
+	rows.Close()
+	if !strings.Contains(plan.String(), "audit_schools_gin") {
+		t.Fatalf("expected generic plan to use audit_schools_gin, got:\n%s", plan.String())
 	}
 }

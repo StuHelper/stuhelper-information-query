@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -43,7 +43,9 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
 
-用迁移身份执行 postgres.Repository.Migrate。001_audit.sql 直接定义最终审计表，created_at 非空且默认取当前时间，并建立保留清理索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE。把运行身份连接池注入 Repository，再注入 Service.Repo。
+用迁移身份执行 postgres.Repository.Migrate。迁移定义审计表及涉及的学校、群、模块数组列与目标范围映射，建立降序和 GIN 索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE；连接池为空时返回 ErrUnavailable。
+
+每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。审计读取按 ID 降序分页，按实际涉及的学校、群与模块匹配，并为受限范围审计员裁剪范围外的目标标识。
 
 Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
 
@@ -63,7 +65,7 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 
 各域 Provider 独立执行授权，内容或群管理权限不能取得财务记录。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。
 
-每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。群聊记录目标群。候选与敏感结果在审计写入成功后返回，写入失败返回 503。
+候选与敏感结果在审计写入成功后返回，写入失败返回 503。群聊查询额外记录目标群标识。
 
 ## 审计保留与维护
 
