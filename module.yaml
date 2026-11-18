@@ -60,6 +60,8 @@ scenario_tests:
     - cursor_test.go#TestCursorAuthenticityAndEquivalentSelections
     - cursor_test.go#TestConfiguredCursorKeyAcrossReplicas
     - cursor_test.go#TestResolverPositionValidatedBeforeContinuation
+    - candidate_page_test.go#TestContinuationKeepsGroupIdentityAndSkipsExhaustedTarget
+    - candidate_page_test.go#TestExhaustedGroupAdvancesToNextCandidate
     - resolver_test.go#TestCompositePagination
     - resolver_test.go#TestCandidateChangeAndWorkBound
   IQ-11:

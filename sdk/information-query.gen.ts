@@ -125,7 +125,10 @@ export interface components {
             account: string;
             source: string;
             current: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time.
+             */
             changed_at: string;
             scope: components["schemas"]["Scope"];
             /** @description Masked distinguishing fields only. */

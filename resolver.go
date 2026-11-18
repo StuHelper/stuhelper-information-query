@@ -9,15 +9,17 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/StuHelper/stuhelper-platform/account"
 )
 
 type continuation struct {
-	Binding   string `json:"b"`
-	Lead      string `json:"l"`
-	Record    string `json:"r"`
-	Candidate string `json:"c"`
+	StartedAt *time.Time `json:"t,omitempty"`
+	Binding   string     `json:"b"`
+	Lead      string     `json:"l"`
+	Record    string     `json:"r"`
+	Candidate string     `json:"c"`
 }
 
 func fingerprint(v any) string {
@@ -58,15 +60,23 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			return out, ErrInvalid
 		}
 	}
+	if q.Kind == "account" {
+		if originalAfter == "" {
+			cursor.StartedAt = &a.CreatedAt
+		}
+		if cursor.StartedAt == nil || cursor.StartedAt.IsZero() {
+			return out, ErrInvalid
+		}
+	}
 	budget, remaining, payload := 700, q.Limit, 0
-	for len(out.Groups) < 50 && remaining > 0 && budget >= len(q.Domains) {
+	for examined := 0; examined < 50 && remaining > 0 && budget >= len(q.Domains); examined++ {
 		if ctx.Err() != nil {
 			return out, ErrUnavailable
 		}
 		var candidate Candidate
 		next := ""
 		if q.Kind == "account" {
-			candidate = Candidate{Account: q.Value, Source: "account", Current: true, ChangedAt: a.CreatedAt, Scope: q.Scope, Label: []Field{}}
+			candidate = Candidate{Account: q.Value, Source: "account", Current: true, ChangedAt: *cursor.StartedAt, Scope: q.Scope, Label: []Field{}}
 		} else {
 			resolver := s.Resolvers[q.Kind]
 			if resolver == nil {
@@ -136,7 +146,9 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		if e != nil {
 			return out, e
 		}
-		out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items})
+		if cursor.Record == "" || len(page.Items) > 0 {
+			out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items})
+		}
 		remaining -= len(page.Items)
 		if page.NextCursor != "" {
 			cursor.Record = page.NextCursor

@@ -551,7 +551,8 @@
           },
           "changed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
