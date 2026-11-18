@@ -38,6 +38,7 @@ scenario_tests:
     - resolver_test.go#TestResolverFailureAndIsolation
     - service_test.go#TestScopeAndDomainIsolation
   IQ-05:
+    - httpapi/request_test.go#TestRequestBoundariesAndRejectionAudit
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
     - account_query_test.go#TestQueryRequiresCanonicalAccount

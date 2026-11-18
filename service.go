@@ -310,7 +310,28 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 
 // Reject records malformed HTTP queries without retaining their raw bodies.
 func (s Service) Reject(ctx context.Context, p account.Principal, id string, d Delivery, cause error) error {
-	a := s.start(p, id, "invalid request", "query.rejected", admin.Global, d)
+	return s.reject(ctx, p, id, d, "query.rejected", cause)
+}
+
+// RejectAudit records a malformed or disallowed audit route request.
+func (s Service) RejectAudit(ctx context.Context, p account.Principal, id string, d Delivery, cause error) error {
+	return s.reject(ctx, p, id, d, "audit.rejected", cause)
+}
+func (s Service) reject(ctx context.Context, p account.Principal, id string, d Delivery, action string, cause error) error {
+	if !p.Valid() {
+		return ErrUnauthenticated
+	}
+	if !clean(id, 128) {
+		id = ""
+	}
+	if !validDelivery(d) {
+		d = Delivery{Channel: "unknown"}
+	}
+	purpose := "invalid request"
+	if errors.Is(cause, ErrForbidden) {
+		purpose = "channel forbidden"
+	}
+	a := s.start(p, id, purpose, action, admin.Global, d)
 	return s.finish(ctx, a, cause)
 }
 
