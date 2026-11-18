@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-information-query/postgres"
@@ -163,7 +164,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	s := iq.Service{Auth: allow{}, Repo: r, Providers: map[string]iq.Provider{"profiles": records{scope: testScope}}}
 	q := iq.Query{Kind: "account", Value: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: testScope, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
 	out, e := s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, reqID, iq.Delivery{Channel: "bot_group", Group: "g"}, q)
-	if e != iq.ErrForbidden || recordCount(out) != 0 {
+	if !errors.Is(e, iq.ErrForbidden) || recordCount(out) != 0 {
 		t.Fatal("bot default", e)
 	}
 	s.BotEnabled = true
@@ -190,7 +191,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	defer readOnly.Close()
 	s.Repo = postgres.Repository{Pool: readOnly}
 	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "blocked-"+uniqueSuffix(), iq.Delivery{Channel: "admin"}, q)
-	if e != iq.ErrUnavailable || recordCount(out) != 0 {
+	if !errors.Is(e, iq.ErrUnavailable) || recordCount(out) != 0 {
 		t.Fatal("failed commit leaked", e)
 	}
 }
@@ -295,7 +296,7 @@ func TestNilPoolReturnsUnavailable(t *testing.T) {
 	}
 	svc := iq.Service{Auth: allow{}, Repo: postgres.Repository{}}
 	actor := account.Principal{Issuer: "test", Subject: "operator"}
-	if _, e := svc.Audit(ctx, actor, "nil-audit", iq.AuditFilter{Scope: admin.Global, Purpose: "check", Limit: 1}); e != iq.ErrUnavailable {
+	if _, e := svc.Audit(ctx, actor, "nil-audit", iq.AuditFilter{Scope: admin.Global, Purpose: "check", Limit: 1}); !errors.Is(e, iq.ErrUnavailable) {
 		t.Fatalf("Service.Audit nil pool: got %v, want ErrUnavailable", e)
 	}
 }
@@ -652,7 +653,7 @@ func TestMalformedInputAuditSanitizationAndNonNullSlices(t *testing.T) {
 		Purpose: "bad\x00purpose",
 		Limit:   1,
 	})
-	if err != iq.ErrInvalid {
+	if !errors.Is(err, iq.ErrInvalid) {
 		t.Fatalf("expected ErrInvalid for NUL/invalid scope, got %v", err)
 	}
 

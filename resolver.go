@@ -33,10 +33,13 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		scope := q.Scope
 		scope.Module = domain
 		if !q.Scope.Contains(scope) {
-			return out, ErrInvalid
+			return out, detailErr(ErrInvalid, "invalid_scope", domain, "")
 		}
-		for _, capability := range append([]string{domain}, q.Fields...) {
-			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(capability)+".read", scope, a); err != nil {
+		if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a, "domain_forbidden", domain, ""); err != nil {
+			return out, err
+		}
+		for _, category := range q.Fields {
+			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(category)+".read", scope, a, "field_forbidden", domain, category); err != nil {
 				return out, err
 			}
 		}
@@ -57,7 +60,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		var ok bool
 		cursor, ok = s.parseContinuation(originalAfter)
 		if !ok || cursor.Binding != binding || !cursor.valid(q) {
-			return out, ErrInvalid
+			return out, detailErr(ErrInvalid, "cursor_mismatch", "", "")
 		}
 	}
 	if q.Kind == "account" {
@@ -72,7 +75,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 	for examined := 0; examined < 50 && remaining > 0; examined++ {
 		if ctx.Err() != nil {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "timeout"})
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 		}
 		var candidate Candidate
 		next := ""
@@ -82,7 +85,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			resolver := s.Resolvers[q.Kind]
 			if resolver == nil {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "resolver_missing"})
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			resolveStart := time.Now()
 			candidates, n, e := resolver.Resolve(ctx, p, Lead{Kind: q.Kind, Value: q.Value, Scope: q.Scope, Purpose: q.Purpose, Limit: 1, After: cursor.Lead})
@@ -90,23 +93,27 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			if e != nil {
 				if errors.Is(e, ErrForbidden) {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "forbidden", Duration: resolveDuration})
-					return out, e
+					resolverDomain := ""
+					if q.Kind == "name" || q.Kind == "student_id" {
+						resolverDomain = "verification"
+					}
+					return out, detailErr(ErrForbidden, "domain_forbidden", resolverDomain, "")
 				}
 				if errors.Is(e, ErrUnauthenticated) {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "unauthenticated", Duration: resolveDuration})
-					return out, e
+					return out, detailErr(ErrUnauthenticated, "unauthenticated", "", "")
 				}
 				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "resolver_error", Duration: resolveDuration})
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			if len(candidates) > 1 || (n != "" && !clean(n, 1024)) || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_resolver_page", Duration: resolveDuration})
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			if len(candidates) == 0 {
 				if cursor.Record != "" {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "candidate_changed", Duration: resolveDuration})
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, "candidate_changed", "", "")
 				}
 				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "ok", Duration: resolveDuration})
 				return out, nil
@@ -114,12 +121,12 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			candidate, next = candidates[0], n
 			if !validQueryValue("account", candidate.Account) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_candidate", Duration: resolveDuration})
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 			}
 			for _, f := range candidate.Label {
 				if !f.Masked || !clean(f.Name, 128) || len(f.Value) > 256 || !slices.Contains([]string{"business", "identity"}, f.Category) {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_candidate_label", Duration: resolveDuration})
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, "resolver_unavailable", "", "")
 				}
 				payload += len(f.Name) + len(f.Value)
 			}
@@ -128,7 +135,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			for _, domain := range q.Domains {
 				scope := candidate.Scope
 				scope.Module = domain
-				if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a); err != nil {
+				if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a, "domain_forbidden", domain, ""); err != nil {
 					return out, err
 				}
 			}
@@ -145,12 +152,12 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		}
 		if payload > 1048576 {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "payload_limit"})
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "payload_too_large", "", "")
 		}
 
 		if cursor.Candidate != "" && cursor.Candidate != candidateKey {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "candidate_changed"})
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "candidate_changed", "", "")
 		}
 		// Domain-prefixed IDs form one total order. Its exclusive lower bound
 		// resumes every domain without retaining discarded fan-out records.

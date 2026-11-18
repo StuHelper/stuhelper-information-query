@@ -2,6 +2,7 @@ package informationquery_test
 
 import (
 	"context"
+	"errors"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-platform/account"
 	"strings"
@@ -53,7 +54,7 @@ func TestPageBudgetCountsDisclosedFieldText(t *testing.T) {
 		p.items[0].Fields[i].Category = "business"
 	}
 	out, err = run(s, q)
-	if err != iq.ErrUnavailable || recordCount(out) != 0 || len(audits.records[1].Targets) != 0 {
+	if !errors.Is(err, iq.ErrUnavailable) || recordCount(out) != 0 || len(audits.records[1].Targets) != 0 {
 		t.Fatal("oversized page", err)
 	}
 }

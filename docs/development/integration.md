@@ -27,6 +27,8 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 
 已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
 
+失败响应保留 code，并通过可选 reason、domain、field 返回细分机器码（如 school_required、candidate_changed、domain_forbidden、field_forbidden）与受阻枚举标识，从不回显原始查询值。
+
 ## 端口与装配
 
 ```go

@@ -38,6 +38,7 @@ scenario_tests:
   IQ-04:
     - resolver_test.go#TestResolverFailureAndIsolation
     - service_test.go#TestScopeAndDomainIsolation
+    - httpapi/handler_test.go#TestStructuredErrorReasonsAndNoSecretEcho
   IQ-05:
     - httpapi/request_test.go#TestRequestBoundariesAndRejectionAudit
     - service_test.go#TestBotDefaultAndGroupDelivery

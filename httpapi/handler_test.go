@@ -403,3 +403,119 @@ func validateValue(doc openAPIDoc, schema map[string]any, val any, path string) 
 	}
 	return nil
 }
+
+func TestStructuredErrorReasonsAndNoSecretEcho(t *testing.T) {
+	actor := account.Principal{Issuer: "issuer", Subject: "operator"}
+	scope := admin.Scope{School: "school-a", Group: "*", Module: "*"}
+	auth := mapAuth{"information-query.profiles.read": true}
+	svc := &iq.Service{Auth: auth, Repo: &auditRepo{}}
+	channel := iq.Delivery{Channel: "admin"}
+	h := httpapi.Handler{Service: svc, Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+		return actor, channel, "req-reason"
+	}}
+
+	cases := []struct {
+		name       string
+		path       string
+		delivery   iq.Delivery
+		body       string
+		wantStatus int
+		wantCode   string
+		wantReason sdk.ErrorReason
+		wantDomain string
+		wantField  string
+	}{
+		{
+			name:       "school required for student_id",
+			path:       "/api/v1/information-query/query",
+			delivery:   iq.Delivery{Channel: "admin"},
+			body:       `{"kind":"student_id","value":"SECRET-ID-2237","scope":{"school":"*","group":"*","module":"*"},"domains":["profiles"],"purpose":"check","limit":10}`,
+			wantStatus: 400,
+			wantCode:   "invalid_request",
+			wantReason: sdk.ErrorReasonSchoolRequired,
+		},
+		{
+			name:       "domain forbidden reports blocked domain",
+			path:       "/api/v1/information-query/query",
+			delivery:   iq.Delivery{Channel: "admin"},
+			body:       `{"kind":"account","value":"` + (account.Principal{Issuer: "test", Subject: "SECRET-ACCOUNT"}).Key() + `","scope":{"school":"school-a","group":"*","module":"*"},"domains":["profiles","billing"],"purpose":"check","limit":10}`,
+			wantStatus: 403,
+			wantCode:   "forbidden",
+			wantReason: sdk.ErrorReasonDomainForbidden,
+			wantDomain: "billing",
+		},
+		{
+			name:       "field forbidden reports domain and field",
+			path:       "/api/v1/information-query/query",
+			delivery:   iq.Delivery{Channel: "admin"},
+			body:       `{"kind":"account","value":"` + (account.Principal{Issuer: "test", Subject: "SECRET-ACCOUNT"}).Key() + `","scope":{"school":"school-a","group":"*","module":"*"},"domains":["profiles"],"fields":["document"],"purpose":"check","limit":10}`,
+			wantStatus: 403,
+			wantCode:   "forbidden",
+			wantReason: sdk.ErrorReasonFieldForbidden,
+			wantDomain: "profiles",
+			wantField:  "document",
+		},
+		{
+			name:       "bot disabled reason",
+			path:       "/api/v1/information-query/query",
+			delivery:   iq.Delivery{Channel: "bot_group", Group: "chat-1"},
+			body:       `{"kind":"account","value":"` + (account.Principal{Issuer: "test", Subject: "SECRET-ACCOUNT"}).Key() + `","scope":{"school":"school-a","group":"*","module":"*"},"domains":["profiles"],"purpose":"check","limit":10}`,
+			wantStatus: 403,
+			wantCode:   "forbidden",
+			wantReason: sdk.ErrorReasonBotDisabled,
+		},
+		{
+			name:       "audit channel forbidden for bot",
+			path:       "/api/v1/information-query/audit/query",
+			delivery:   iq.Delivery{Channel: "bot_group", Group: "chat-1"},
+			body:       `{"scope":{"school":"school-a","group":"*","module":"*"},"purpose":"audit","after":"","limit":10}`,
+			wantStatus: 403,
+			wantCode:   "forbidden",
+			wantReason: sdk.ErrorReasonChannelForbidden,
+		},
+		{
+			name:       "missing resolver reports resolver_unavailable",
+			path:       "/api/v1/information-query/query",
+			delivery:   iq.Delivery{Channel: "admin"},
+			body:       `{"kind":"name","value":"SECRET-NAME","scope":{"school":"school-a","group":"*","module":"*"},"domains":["profiles"],"purpose":"check","limit":10}`,
+			wantStatus: 503,
+			wantCode:   "unavailable",
+			wantReason: sdk.ErrorReasonResolverUnavailable,
+		},
+	}
+	_ = scope
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			channel = tc.delivery
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest("POST", tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			h.ServeHTTP(w, req)
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", w.Code, tc.wantStatus, w.Body.String())
+			}
+			raw := w.Body.String()
+			if strings.Contains(raw, "SECRET-") {
+				t.Fatalf("error response leaked secret input: %s", raw)
+			}
+			var got sdk.Error
+			if e := json.Unmarshal(w.Body.Bytes(), &got); e != nil {
+				t.Fatal(e)
+			}
+			if got.Code != tc.wantCode || got.Reason == nil || *got.Reason != tc.wantReason {
+				t.Fatalf("got=%+v want code=%s reason=%s", got, tc.wantCode, tc.wantReason)
+			}
+			gotDomain := ""
+			if got.Domain != nil {
+				gotDomain = string(*got.Domain)
+			}
+			gotField := ""
+			if got.Field != nil {
+				gotField = string(*got.Field)
+			}
+			if gotDomain != tc.wantDomain || gotField != tc.wantField {
+				t.Fatalf("got domain=%q field=%q, want domain=%q field=%q", gotDomain, gotField, tc.wantDomain, tc.wantField)
+			}
+		})
+	}
+}

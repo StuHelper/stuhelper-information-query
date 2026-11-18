@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"slices"
 )
 
 type Identity func(*http.Request) (account.Principal, iq.Delivery, string)
@@ -17,15 +18,18 @@ type Handler struct {
 	Identity Identity
 }
 
+var allowedDomains = []string{"profiles", "verification", "catalog", "reviews", "resources", "billing", "groups"}
+var allowedFields = []string{"identity", "document", "material", "refund_payee"}
+
 func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if e := d.Decode(v); e != nil {
-		return iq.ErrInvalid
+		return &iq.ErrorDetail{Base: iq.ErrInvalid, Code: iq.ErrInvalid.Error(), Reason: "invalid_parameter"}
 	}
 	if d.Decode(new(any)) != io.EOF {
-		return iq.ErrInvalid
+		return &iq.ErrorDetail{Base: iq.ErrInvalid, Code: iq.ErrInvalid.Error(), Reason: "invalid_parameter"}
 	}
 	return nil
 }
@@ -56,7 +60,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == auditPath {
 		reject = h.Service.RejectAudit
 		if d.Channel != "admin" {
-			write(w, nil, reject(r.Context(), p, id, d, iq.ErrForbidden))
+			write(w, nil, reject(r.Context(), p, id, d, &iq.ErrorDetail{Base: iq.ErrForbidden, Code: iq.ErrForbidden.Error(), Reason: "channel_forbidden"}))
 			return
 		}
 	}
@@ -104,7 +108,19 @@ func write(w http.ResponseWriter, out any, err error) {
 				code = e.err.Error()
 			}
 		}
-		writeCode(w, status, code)
+		resp := iq.ErrorDetail{Code: code}
+		var detail *iq.ErrorDetail
+		if errors.As(err, &detail) && detail != nil {
+			resp.Reason = detail.Reason
+			if slices.Contains(allowedDomains, detail.Domain) {
+				resp.Domain = detail.Domain
+			}
+			if slices.Contains(allowedFields, detail.Field) {
+				resp.Field = detail.Field
+			}
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(out)

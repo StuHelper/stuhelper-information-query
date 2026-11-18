@@ -20,6 +20,22 @@ var auditChannels = []string{"admin", "bot_private", "bot_group", "unknown"}
 var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rejected", "provider.query"}
 var auditResults = []string{"success", "denied", "invalid_request", "unauthenticated", "unavailable"}
 
+func detailErr(base error, reason, domain, field string) error {
+	code := "unavailable"
+	for _, known := range []error{ErrInvalid, ErrForbidden, ErrUnauthenticated} {
+		if errors.Is(base, known) {
+			code = known.Error()
+		}
+	}
+	if !slices.Contains(domains, domain) {
+		domain = ""
+	}
+	if !slices.Contains(categories, field) {
+		field = ""
+	}
+	return &ErrorDetail{Base: base, Code: code, Reason: reason, Domain: domain, Field: field}
+}
+
 type Service struct {
 	// CursorKey may be shared by replicas. A nil key uses this process's ephemeral key.
 	CursorKey  *[32]byte
@@ -83,23 +99,23 @@ func (s Service) observe(ev Event) {
 	}
 	s.Observe(ev)
 }
-func (s Service) evaluate(ctx context.Context, p account.Principal, cap string, scope admin.Scope, a *Audit) error {
+func (s Service) evaluate(ctx context.Context, p account.Principal, cap string, scope admin.Scope, a *Audit, forbiddenReason, domain, field string) error {
 	start := time.Now()
 	if s.Auth == nil {
 		s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "auth_missing"})
-		return ErrUnavailable
+		return detailErr(ErrUnavailable, "auth_unavailable", domain, field)
 	}
 	if e := s.Auth.Evaluate(ctx, p, cap, scope); e != nil {
 		if errors.Is(e, ErrForbidden) {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "forbidden", Duration: time.Since(start)})
-			return e
+			return detailErr(ErrForbidden, forbiddenReason, domain, field)
 		}
 		if errors.Is(e, ErrUnauthenticated) {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "unauthenticated", Duration: time.Since(start)})
-			return e
+			return detailErr(ErrUnauthenticated, "unauthenticated", "", "")
 		}
 		s.observe(Event{RequestID: a.RequestID, Stage: StageAuth, Domain: scope.Module, Code: "auth_error", Duration: time.Since(start)})
-		return ErrUnavailable
+		return detailErr(ErrUnavailable, "auth_unavailable", domain, field)
 	}
 	if !slices.Contains(a.Basis, cap) {
 		a.Basis = append(a.Basis, cap)
@@ -141,11 +157,11 @@ func (s Service) finish(ctx context.Context, a Audit, err error) error {
 	defer cancel()
 	if s.Repo == nil {
 		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_missing"})
-		return ErrUnavailable
+		return detailErr(ErrUnavailable, "audit_unavailable", "", "")
 	}
 	if s.Repo.Append(auditCtx, a) != nil {
 		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_append_error", Duration: time.Since(start)})
-		return ErrUnavailable
+		return detailErr(ErrUnavailable, "audit_unavailable", "", "")
 	}
 	s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: a.Result, Duration: time.Since(start)})
 	return err
@@ -189,13 +205,19 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if !p.Valid() {
-		return out, ErrUnauthenticated
+		return out, detailErr(ErrUnauthenticated, "unauthenticated", "", "")
 	}
-	if !clean(id, 128) || !cleanText(q.Purpose, 512) || !validQueryValue(q.Kind, q.Value) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains(kinds, q.Kind) {
-		return out, ErrInvalid
+	if !scopeOK(q.Scope) {
+		return out, detailErr(ErrInvalid, "invalid_scope", "", "")
+	}
+	if q.Kind == "account" && !validQueryValue(q.Kind, q.Value) {
+		return out, detailErr(ErrInvalid, "invalid_account_key", "", "")
+	}
+	if !clean(id, 128) || !cleanText(q.Purpose, 512) || (q.Kind != "account" && !validQueryValue(q.Kind, q.Value)) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains(kinds, q.Kind) {
+		return out, detailErr(ErrInvalid, "invalid_parameter", "", "")
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {
-		return out, ErrInvalid
+		return out, detailErr(ErrInvalid, "school_required", "", "")
 	}
 	if s.Auth != nil {
 		s.Auth = queryAuthorizer{source: s.Auth, allowed: make(map[permission]bool)}
@@ -206,9 +228,9 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	}
 	if d.Channel != "admin" {
 		if !s.BotEnabled {
-			return out, ErrForbidden
+			return out, detailErr(ErrForbidden, "bot_disabled", "", "")
 		}
-		if err = s.evaluate(ctx, p, "information-query.bot", q.Scope, &a); err != nil {
+		if err = s.evaluate(ctx, p, "information-query.bot", q.Scope, &a, "bot_forbidden", "", ""); err != nil {
 			return out, err
 		}
 	}
@@ -253,13 +275,13 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 		scope := q.Scope
 		scope.Module = domain
 		if !q.Scope.Contains(scope) {
-			return out, ErrInvalid
+			return out, detailErr(ErrInvalid, "invalid_scope", domain, "")
 		}
-		if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a); err != nil {
+		if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a, "domain_forbidden", domain, ""); err != nil {
 			return out, err
 		}
 		for _, category := range q.Fields {
-			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(category)+".read", scope, a); err != nil {
+			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(category)+".read", scope, a, "field_forbidden", domain, category); err != nil {
 				return out, err
 			}
 		}
@@ -284,28 +306,28 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 		if e != nil {
 			if errors.Is(e, ErrForbidden) {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "forbidden", Duration: callDuration})
-				return out, e
+				return out, detailErr(ErrForbidden, "domain_forbidden", domain, "")
 			}
 			if errors.Is(e, ErrUnauthenticated) {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "unauthenticated", Duration: callDuration})
-				return out, e
+				return out, detailErr(ErrUnauthenticated, "unauthenticated", "", "")
 			}
 			s.observe(Event{RequestID: a.RequestID, Stage: StageProvider, Domain: domain, Kind: q.Kind, Code: "provider_error", Duration: callDuration})
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "provider_unavailable", domain, "")
 		}
 		if len(records) > pq.Limit {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "record_limit_exceeded", Duration: callDuration})
-			return out, ErrUnavailable
+			return out, detailErr(ErrUnavailable, "provider_unavailable", domain, "")
 		}
 		rawBytes := 0
 		previous := pq.After
 		for _, r := range records {
 			if !strings.HasPrefix(r.ID, domain+":") || !clean(r.ID, 256) || r.ID <= previous || (!clean(r.Subject, 2048) || r.Subject != q.Value) || !clean(r.Source, 128) || r.ChangedAt.IsZero() || !r.Scope.Valid() || r.Scope.Module != domain || !scope.Contains(r.Scope) || len(r.Fields) > 100 {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "invalid_record", Duration: callDuration})
-				return out, ErrUnavailable
+				return out, detailErr(ErrUnavailable, "provider_unavailable", domain, "")
 			}
 			previous = r.ID
-			if e = s.evaluate(ctx, p, "information-query."+domain+".read", r.Scope, a); e != nil {
+			if e = s.evaluate(ctx, p, "information-query."+domain+".read", r.Scope, a, "domain_forbidden", domain, ""); e != nil {
 				return out, e
 			}
 			filtered := make([]Field, 0, len(r.Fields))
@@ -313,19 +335,21 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 				rawBytes += len(f.Name) + len(f.Value)
 				if !clean(f.Name, 128) || len(f.Value) > 65536 || rawBytes > 8<<20 {
 					code := "invalid_field"
+					reason := "provider_unavailable"
 					if len(f.Value) > 65536 || rawBytes > 8<<20 {
 						code = "payload_limit"
+						reason = "payload_too_large"
 					}
 					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: code, Duration: callDuration})
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, reason, domain, "")
 				}
 				if f.Category != "business" && !slices.Contains(categories, f.Category) {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "invalid_field_category", Duration: callDuration})
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, "provider_unavailable", domain, "")
 				}
 				if f.Category != "business" {
 					if slices.Contains(q.Fields, f.Category) {
-						if e = s.evaluate(ctx, p, "information-query."+fieldCapability(f.Category)+".read", r.Scope, a); e != nil {
+						if e = s.evaluate(ctx, p, "information-query."+fieldCapability(f.Category)+".read", r.Scope, a, "field_forbidden", domain, f.Category); e != nil {
 							return out, e
 						}
 					} else if f.Category == "identity" {
@@ -338,7 +362,7 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 				*payloadBytes += len(f.Name) + len(f.Value)
 				if *payloadBytes > 1<<20 {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "payload_limit", Duration: callDuration})
-					return out, ErrUnavailable
+					return out, detailErr(ErrUnavailable, "payload_too_large", domain, "")
 				}
 				filtered = append(filtered, f)
 			}
@@ -362,29 +386,32 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 		}
 	}()
 	if !p.Valid() {
-		return out, ErrUnauthenticated
+		return out, detailErr(ErrUnauthenticated, "unauthenticated", "", "")
 	}
-	if !clean(id, 128) || !cleanText(f.Purpose, 512) || !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 {
-		return out, ErrInvalid
+	if !f.Scope.Valid() {
+		return out, detailErr(ErrInvalid, "invalid_scope", "", "")
+	}
+	if !clean(id, 128) || !cleanText(f.Purpose, 512) || f.Limit < 1 || f.Limit > 100 {
+		return out, detailErr(ErrInvalid, "invalid_parameter", "", "")
 	}
 	if (f.Actor != "" && !clean(f.Actor, 2048)) || (f.Target != "" && !clean(f.Target, 2048)) || (f.Action != "" && !clean(f.Action, 128)) || (f.Result != "" && !clean(f.Result, 128)) || (f.Channel != "" && !clean(f.Channel, 128)) {
-		return out, ErrInvalid
+		return out, detailErr(ErrInvalid, "invalid_parameter", "", "")
 	}
 	if (f.CreatedFrom != nil && f.CreatedFrom.IsZero()) || (f.CreatedUntil != nil && f.CreatedUntil.IsZero()) || (f.CreatedFrom != nil && f.CreatedUntil != nil && f.CreatedFrom.After(*f.CreatedUntil)) {
-		return out, ErrInvalid
+		return out, detailErr(ErrInvalid, "invalid_parameter", "", "")
 	}
 	if f.After != "" {
 		n, e := strconv.ParseInt(f.After, 10, 64)
 		if e != nil || n < 0 {
-			return out, ErrInvalid
+			return out, detailErr(ErrInvalid, "cursor_mismatch", "", "")
 		}
 	}
-	if err = s.evaluate(ctx, p, "information-query.audit.read", f.Scope, &a); err != nil {
+	if err = s.evaluate(ctx, p, "information-query.audit.read", f.Scope, &a, "audit_forbidden", "", ""); err != nil {
 		return out, err
 	}
 	if s.Repo == nil {
 		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_missing"})
-		return out, ErrUnavailable
+		return out, detailErr(ErrUnavailable, "audit_unavailable", "", "")
 	}
 	readStart := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -392,7 +419,7 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 	out, err = s.Repo.Read(ctx, f)
 	if err != nil {
 		s.observe(Event{RequestID: a.RequestID, Stage: StageAudit, Code: "audit_read_error", Duration: time.Since(readStart)})
-		return out, ErrUnavailable
+		return out, detailErr(ErrUnavailable, "audit_unavailable", "", "")
 	}
 	a.Count = len(out.Items)
 	return out, nil

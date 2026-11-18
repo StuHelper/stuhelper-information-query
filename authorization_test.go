@@ -2,6 +2,7 @@ package informationquery_test
 
 import (
 	"context"
+	"errors"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/admin"
@@ -43,7 +44,7 @@ func TestAuthorizationReuseEndsAtRequestBoundary(t *testing.T) {
 	denied := checkKey{"information-query.identity.read", p.items[0].Scope}
 	auth.deny = &denied
 	out, err = run(s, q)
-	if err != iq.ErrForbidden || len(out.Groups) != 0 || auth.calls[denied] != 2 || len(audits.records) != 2 || len(audits.records[1].Targets) != 0 {
+	if !errors.Is(err, iq.ErrForbidden) || len(out.Groups) != 0 || auth.calls[denied] != 2 || len(audits.records) != 2 || len(audits.records[1].Targets) != 0 {
 		t.Fatal("revocation", err, auth.calls)
 	}
 }

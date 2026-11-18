@@ -125,6 +125,129 @@ func (e AuditResult) Valid() bool {
 	}
 }
 
+// Defines values for ErrorDomain.
+const (
+	ErrorDomainBilling      ErrorDomain = "billing"
+	ErrorDomainCatalog      ErrorDomain = "catalog"
+	ErrorDomainGroups       ErrorDomain = "groups"
+	ErrorDomainProfiles     ErrorDomain = "profiles"
+	ErrorDomainResources    ErrorDomain = "resources"
+	ErrorDomainReviews      ErrorDomain = "reviews"
+	ErrorDomainVerification ErrorDomain = "verification"
+)
+
+// Valid indicates whether the value is a known member of the ErrorDomain enum.
+func (e ErrorDomain) Valid() bool {
+	switch e {
+	case ErrorDomainBilling:
+		return true
+	case ErrorDomainCatalog:
+		return true
+	case ErrorDomainGroups:
+		return true
+	case ErrorDomainProfiles:
+		return true
+	case ErrorDomainResources:
+		return true
+	case ErrorDomainReviews:
+		return true
+	case ErrorDomainVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorField.
+const (
+	ErrorFieldDocument    ErrorField = "document"
+	ErrorFieldIdentity    ErrorField = "identity"
+	ErrorFieldMaterial    ErrorField = "material"
+	ErrorFieldRefundPayee ErrorField = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the ErrorField enum.
+func (e ErrorField) Valid() bool {
+	switch e {
+	case ErrorFieldDocument:
+		return true
+	case ErrorFieldIdentity:
+		return true
+	case ErrorFieldMaterial:
+		return true
+	case ErrorFieldRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorReason.
+const (
+	ErrorReasonAuditForbidden      ErrorReason = "audit_forbidden"
+	ErrorReasonAuditUnavailable    ErrorReason = "audit_unavailable"
+	ErrorReasonAuthUnavailable     ErrorReason = "auth_unavailable"
+	ErrorReasonBotDisabled         ErrorReason = "bot_disabled"
+	ErrorReasonBotForbidden        ErrorReason = "bot_forbidden"
+	ErrorReasonCandidateChanged    ErrorReason = "candidate_changed"
+	ErrorReasonChannelForbidden    ErrorReason = "channel_forbidden"
+	ErrorReasonCursorMismatch      ErrorReason = "cursor_mismatch"
+	ErrorReasonDomainForbidden     ErrorReason = "domain_forbidden"
+	ErrorReasonFieldForbidden      ErrorReason = "field_forbidden"
+	ErrorReasonInvalidAccountKey   ErrorReason = "invalid_account_key"
+	ErrorReasonInvalidParameter    ErrorReason = "invalid_parameter"
+	ErrorReasonInvalidScope        ErrorReason = "invalid_scope"
+	ErrorReasonPayloadTooLarge     ErrorReason = "payload_too_large"
+	ErrorReasonProviderUnavailable ErrorReason = "provider_unavailable"
+	ErrorReasonResolverUnavailable ErrorReason = "resolver_unavailable"
+	ErrorReasonSchoolRequired      ErrorReason = "school_required"
+	ErrorReasonUnauthenticated     ErrorReason = "unauthenticated"
+)
+
+// Valid indicates whether the value is a known member of the ErrorReason enum.
+func (e ErrorReason) Valid() bool {
+	switch e {
+	case ErrorReasonAuditForbidden:
+		return true
+	case ErrorReasonAuditUnavailable:
+		return true
+	case ErrorReasonAuthUnavailable:
+		return true
+	case ErrorReasonBotDisabled:
+		return true
+	case ErrorReasonBotForbidden:
+		return true
+	case ErrorReasonCandidateChanged:
+		return true
+	case ErrorReasonChannelForbidden:
+		return true
+	case ErrorReasonCursorMismatch:
+		return true
+	case ErrorReasonDomainForbidden:
+		return true
+	case ErrorReasonFieldForbidden:
+		return true
+	case ErrorReasonInvalidAccountKey:
+		return true
+	case ErrorReasonInvalidParameter:
+		return true
+	case ErrorReasonInvalidScope:
+		return true
+	case ErrorReasonPayloadTooLarge:
+		return true
+	case ErrorReasonProviderUnavailable:
+		return true
+	case ErrorReasonResolverUnavailable:
+		return true
+	case ErrorReasonSchoolRequired:
+		return true
+	case ErrorReasonUnauthenticated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FieldCategory.
 const (
 	FieldCategoryBusiness    FieldCategory = "business"
@@ -324,7 +447,25 @@ type CandidateGroup struct {
 // Error defines model for Error.
 type Error struct {
 	Code string `json:"code"`
+
+	// Domain Affected business domain when a domain check or provider failed; never echoes query values.
+	Domain *ErrorDomain `json:"domain,omitempty"`
+
+	// Field Affected sensitive field category when field authorization failed; never echoes query values.
+	Field *ErrorField `json:"field,omitempty"`
+
+	// Reason Machine-readable failure cause for localized recovery guidance.
+	Reason *ErrorReason `json:"reason,omitempty"`
 }
+
+// ErrorDomain Affected business domain when a domain check or provider failed; never echoes query values.
+type ErrorDomain string
+
+// ErrorField Affected sensitive field category when field authorization failed; never echoes query values.
+type ErrorField string
+
+// ErrorReason Machine-readable failure cause for localized recovery guidance.
+type ErrorReason string
 
 // Field defines model for Field.
 type Field struct {
