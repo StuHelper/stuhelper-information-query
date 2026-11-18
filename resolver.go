@@ -3,11 +3,12 @@ package informationquery
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/StuHelper/stuhelper-platform/account"
 )
@@ -43,14 +44,17 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 	}
 	originalAfter := q.After
 	q.After = ""
+	q.Domains = slices.Sorted(slices.Values(q.Domains))
+	q.Fields = slices.Sorted(slices.Values(q.Fields))
 	binding := fingerprint(struct {
 		Query Query
 		Actor string
 	}{q, p.Key()})
 	cursor := continuation{Binding: binding}
 	if originalAfter != "" {
-		b, e := base64.RawURLEncoding.DecodeString(originalAfter)
-		if e != nil || json.Unmarshal(b, &cursor) != nil || cursor.Binding != binding || len(cursor.Lead) > 1024 || len(cursor.Record) > 256 {
+		var ok bool
+		cursor, ok = s.parseContinuation(originalAfter)
+		if !ok || cursor.Binding != binding || !cursor.valid(q) {
 			return out, ErrInvalid
 		}
 	}
@@ -75,7 +79,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 				}
 				return out, ErrUnavailable
 			}
-			if len(candidates) > 1 || len(n) > 1024 || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
+			if len(candidates) > 1 || (n != "" && !clean(n, 1024)) || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
 				return out, ErrUnavailable
 			}
 			if len(candidates) == 0 {
@@ -150,7 +154,21 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			break
 		}
 	}
-	b, _ := json.Marshal(cursor)
-	out.NextCursor = base64.RawURLEncoding.EncodeToString(b)
+	out.NextCursor = s.encodeContinuation(cursor)
+	if len(out.NextCursor) > 4096 {
+		return out, ErrUnavailable
+	}
 	return out, nil
+}
+
+func (c continuation) valid(q Query) bool {
+	if c.Lead != "" && (q.Kind == "account" || !clean(c.Lead, 1024)) {
+		return false
+	}
+	if c.Record == "" {
+		return c.Candidate == "" && c.Lead != ""
+	}
+	digest, err := hex.DecodeString(c.Candidate)
+	domain, _, ok := strings.Cut(c.Record, ":")
+	return err == nil && len(digest) == sha256.Size && clean(c.Record, 256) && ok && slices.Contains(q.Domains, domain)
 }

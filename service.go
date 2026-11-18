@@ -18,6 +18,8 @@ var domains = []string{"profiles", "verification", "catalog", "reviews", "resour
 var categories = []string{"identity", "document", "material", "refund_payee"}
 
 type Service struct {
+	// CursorKey may be shared by replicas. A nil key uses this process's ephemeral key.
+	CursorKey  *[32]byte
 	Auth       Authorizer
 	Repo       Repository
 	Resolvers  map[string]Resolver // name/student_id: verification; qq: qq-binding
