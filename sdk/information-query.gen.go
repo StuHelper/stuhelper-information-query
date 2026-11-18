@@ -191,7 +191,7 @@ type FieldCategory string
 
 // Query defines model for Query.
 type Query struct {
-	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation.
+	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation.
 	After   *string        `json:"after,omitempty"`
 	Domains []QueryDomains `json:"domains"`
 

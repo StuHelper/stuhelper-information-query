@@ -58,7 +58,7 @@ export interface components {
             purpose: string;
             /** @description Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page. */
             limit: number;
-            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation. */
+            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. */
             after?: string;
         };
         Field: {

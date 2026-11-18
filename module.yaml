@@ -49,6 +49,9 @@ scenario_tests:
   IQ-09:
     - resolver_test.go#TestResolverFailureAndIsolation
   IQ-10:
+    - domain_page_test.go#TestOrderedDomainBudgetAndLocalCursor
+    - domain_page_test.go#TestPageBudgetCountsDisclosedFieldText
+    - domain_page_test.go#TestSparseDomainPagesUseActualRecords
     - resolver_test.go#TestCompositePagination
     - resolver_test.go#TestCandidateChangeAndWorkBound
   IQ-11:

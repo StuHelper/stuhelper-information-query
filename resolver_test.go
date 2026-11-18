@@ -197,7 +197,7 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 	r.candidates = append(r.candidates, r.candidates...)
 	r.candidates = append(r.candidates, r.candidates...)
 	out, e = run(s, q)
-	if e != nil || p.requested > 700 || r.calls > 50 || out.NextCursor == "" {
+	if e != nil || len(out.Groups) != 16 || recordCount(out) != 48 || p.calls != 16 || r.calls != 16 || out.NextCursor != "" {
 		t.Fatal("work bound", e, p.requested, r.calls)
 	}
 }

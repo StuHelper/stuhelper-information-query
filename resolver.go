@@ -54,8 +54,9 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			return out, ErrInvalid
 		}
 	}
-	budget, remaining, payload := 700, q.Limit, 0
-	for len(out.Groups) < 50 && remaining > 0 && budget >= len(q.Domains) {
+	q.Domains = slices.Sorted(slices.Values(q.Domains))
+	remaining, payload := q.Limit, 0
+	for len(out.Groups) < 50 && remaining > 0 {
 		if ctx.Err() != nil {
 			return out, ErrUnavailable
 		}
@@ -126,8 +127,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		pq.Kind = "account"
 		pq.Value = candidate.Account
 		pq.After = cursor.Record
-		pq.Limit = min(remaining, budget/len(q.Domains))
-		budget -= pq.Limit * len(q.Domains)
+		pq.Limit = remaining
 		page, e := s.queryRecords(ctx, p, pq, a, &payload)
 		if e != nil {
 			return out, e

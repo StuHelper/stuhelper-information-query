@@ -6,7 +6,6 @@ import (
 	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/admin"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -156,6 +155,10 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 				return out, err
 			}
 		}
+		prefix := domain + ":"
+		if q.After != "" && prefix < q.After && !strings.HasPrefix(q.After, prefix) {
+			continue
+		}
 		provider := s.Providers[domain]
 		if provider == nil {
 			out.UnavailableDomains = append(out.UnavailableDomains, domain)
@@ -164,6 +167,10 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 		pq := q
 		pq.Scope = scope
 		pq.Domains = []string{domain}
+		pq.Limit = q.Limit - len(out.Items)
+		if !strings.HasPrefix(q.After, prefix) {
+			pq.After = ""
+		}
 		records, e := provider.Query(ctx, p, pq)
 		if e != nil {
 			if errors.Is(e, ErrForbidden) || errors.Is(e, ErrUnauthenticated) {
@@ -171,10 +178,11 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 			}
 			return out, ErrUnavailable
 		}
-		if len(records) > q.Limit {
+		if len(records) > pq.Limit {
 			return out, ErrUnavailable
 		}
-		previous := q.After
+		rawBytes := 0
+		previous := pq.After
 		for _, r := range records {
 			if !strings.HasPrefix(r.ID, domain+":") || !clean(r.ID, 256) || r.ID <= previous || (!clean(r.Subject, 2048) || r.Subject != q.Value) || !clean(r.Source, 128) || r.ChangedAt.IsZero() || !r.Scope.Valid() || r.Scope.Module != domain || !scope.Contains(r.Scope) || len(r.Fields) > 100 {
 				return out, ErrUnavailable
@@ -185,8 +193,8 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 			}
 			filtered := make([]Field, 0, len(r.Fields))
 			for _, f := range r.Fields {
-				*payloadBytes += len(f.Name) + len(f.Value)
-				if !clean(f.Name, 128) || len(f.Value) > 65536 || *payloadBytes > 1048576 {
+				rawBytes += len(f.Name) + len(f.Value)
+				if !clean(f.Name, 128) || len(f.Value) > 65536 || rawBytes > 8<<20 {
 					return out, ErrUnavailable
 				}
 				if f.Category != "business" && !slices.Contains(categories, f.Category) {
@@ -204,22 +212,19 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 						continue
 					}
 				}
+				*payloadBytes += len(f.Name) + len(f.Value)
+				if *payloadBytes > 1<<20 {
+					return out, ErrUnavailable
+				}
 				filtered = append(filtered, f)
 			}
 			r.Fields = filtered
 			out.Items = append(out.Items, r)
 		}
-	}
-	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].ID < out.Items[j].ID })
-	// IDs must be globally unique (owning-module prefix) for stable fan-out pagination.
-	for i := 1; i < len(out.Items); i++ {
-		if out.Items[i-1].ID == out.Items[i].ID {
-			return out, ErrUnavailable
+		if len(out.Items) == q.Limit {
+			out.NextCursor = out.Items[len(out.Items)-1].ID
+			break
 		}
-	}
-	if len(out.Items) >= q.Limit {
-		out.Items = out.Items[:q.Limit]
-		out.NextCursor = out.Items[len(out.Items)-1].ID
 	}
 	return out, nil
 }
