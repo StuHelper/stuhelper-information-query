@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-18
+updated: 2026-11-19
 ---
 
 # 信息查询装配与实施状态
@@ -35,7 +35,9 @@ Query(ctx context.Context, principal account.Principal, query Query) ([]Record, 
 PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 ```
 
-Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。Account 是 issuer 与 subject 组成的完整账号键，不得以昵称、学号或 QQ 值代替。
+Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。
+
+Account 使用平台 Principal.Key() 生成的完整账号键，最多 2048 字节。直接输入无效账号键返回 400，解析器给出无效账号键返回 503，两种情况均在访问业务域前结束。其他线索最多 256 个 Unicode 码点。
 
 Service.Resolvers 按 kind 装配：name、student_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
 
@@ -45,7 +47,11 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
 
-用迁移身份执行 postgres.Repository.Migrate。001_audit.sql 直接定义最终审计表，created_at 非空且默认取当前时间，并建立保留清理索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE。把运行身份连接池注入 Repository，再注入 Service.Repo。
+用迁移身份执行 postgres.Repository.Migrate。运行身份需要 schema 的 USAGE、audit 和 audit_scopes 的 SELECT、INSERT，以及 audit_id_seq 的 USAGE。范围明细与审计正文在同一语句提交，删除审计时级联清理明细。连接池为空时返回 ErrUnavailable。
+
+旧记录按请求范围可见。新记录同时保存实际范围，每组学校、群、模块作为整体匹配。学校、群及模块的分页索引按审计 ID 排序，读取时裁剪范围外目标。
+
+每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。审计读取按 ID 降序分页，按实际涉及的学校、群与模块匹配，并为受限范围审计员裁剪范围外的目标标识。
 
 Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
 
@@ -65,7 +71,7 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 
 各域 Provider 独立执行授权，内容或群管理权限不能取得财务记录。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。
 
-每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。群聊记录目标群。候选与敏感结果在审计写入成功后返回，写入失败返回 503。
+每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。用途支持换行和制表符，最多 512 个 Unicode 码点；审计仅记录申请或实际明文披露的敏感类别，无权拒绝统一记为 denied，落盘前清洗非法范围、控制字符与空切片。候选与敏感结果在审计写入成功后返回，写入失败返回 503。群聊查询额外记录目标群标识。
 
 ## 审计保留与维护
 
