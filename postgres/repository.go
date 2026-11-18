@@ -41,6 +41,7 @@ func (r Repository) Migrate(ctx context.Context) error {
 }
 
 func (r Repository) Append(ctx context.Context, a iq.Audit) error {
+	a = iq.SanitizeAudit(a)
 	if r.Pool == nil {
 		return iq.ErrUnavailable
 	}
@@ -145,6 +146,7 @@ func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPag
 			}
 			a.Targets = filtered
 		}
+		a = iq.SanitizeAudit(a)
 		a.ID = strconv.FormatInt(id, 10)
 		out.Items = append(out.Items, a)
 	}

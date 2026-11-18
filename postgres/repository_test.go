@@ -570,3 +570,88 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 		t.Fatalf("expected ordered school indexes for request and observed scopes, got:\n%s", plan.String())
 	}
 }
+
+func TestMalformedInputAuditSanitizationAndNonNullSlices(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	svc := iq.Service{Auth: allow{}, Repo: r}
+	actor := account.Principal{Issuer: "test", Subject: "student"}
+	reqID := "malformed-" + time.Now().UTC().Format("150405.000000000")
+
+	// The malformed request must keep its rejection code and commit a readable denial.
+	_, err := svc.Query(ctx, actor, reqID+"\x00", iq.Delivery{Channel: "bad\x00", Group: "g\x00"}, iq.Query{
+		Kind:    "name",
+		Value:   "x",
+		Scope:   admin.Scope{School: "", Group: "a02-group", Module: "*"},
+		Domains: []string{"profiles"},
+		Purpose: "bad\x00purpose",
+		Limit:   1,
+	})
+	if err != iq.ErrInvalid {
+		t.Fatalf("expected ErrInvalid for NUL/invalid scope, got %v", err)
+	}
+
+	var stored iq.Audit
+	var body []byte
+	var indexed admin.Scope
+	if e = pool.QueryRow(ctx, `SELECT school,group_id,module,body FROM information_query.audit WHERE body->>'request_id'=$1`, reqID).Scan(&indexed.School, &indexed.Group, &indexed.Module, &body); e != nil {
+		t.Fatal(e)
+	}
+	if e = json.Unmarshal(body, &stored); e != nil || indexed != admin.Global || stored.Scope != indexed || stored.Purpose != "badpurpose" || stored.Channel != "unknown" || stored.Result != "invalid_request" || stored.Fields == nil || stored.Targets == nil || stored.Basis == nil {
+		t.Fatal("stored denial", stored, e)
+	}
+	// Direct Repository.Append with nil slices must also round-trip as [] not null.
+	nilSliceScope := admin.Scope{School: "a02-nil-school", Group: "a02-group", Module: "profiles"}
+	if err = r.Append(ctx, iq.Audit{
+		Actor:     actor.Key(),
+		RequestID: reqID + "-nil",
+		Purpose:   "provider denial",
+		Scope:     nilSliceScope,
+		Channel:   "admin",
+		Action:    "provider.query",
+		Result:    "denied",
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("Append nil slices failed: %v", err)
+	}
+
+	// Simulate an immutable row written by an older host and inspect its read projection.
+	if _, err = pool.Exec(ctx, `INSERT INTO information_query.audit(school,group_id,module,body)
+		VALUES('legacy','a02-group','profiles','{"scope":{"school":"","group":"a02-group","module":"profiles"},"channel":"legacy","action":"legacy","result":"forbidden","fields":["business"],"targets":null,"basis":null}')`); err != nil {
+		t.Fatal(err)
+	}
+	page, err := r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: "*", Group: "a02-group", Module: "*"}, Limit: 100})
+	if err != nil || len(page.Items) != 2 {
+		t.Fatalf("Read sanitized audits failed: items=%d err=%v", len(page.Items), err)
+	}
+	for _, item := range page.Items {
+		if !item.Scope.Valid() {
+			t.Fatalf("persisted invalid Scope in audit: %+v", item.Scope)
+		}
+		if strings.ContainsRune(item.Purpose, '\x00') || strings.ContainsRune(item.RequestID, '\x00') {
+			t.Fatalf("persisted NUL byte in audit: %+v", item)
+		}
+		if item.Action == "unknown" && (item.Channel != "unknown" || item.Result != "denied" || len(item.Fields) != 0) {
+			t.Fatal("legacy projection", item)
+		}
+		raw, err := json.Marshal(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), `"targets":null`) || strings.Contains(string(raw), `"fields":null`) || strings.Contains(string(raw), `"basis":null`) {
+			t.Fatalf("serialized null array in audit JSON: %s", string(raw))
+		}
+	}
+}
