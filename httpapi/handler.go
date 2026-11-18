@@ -7,7 +7,9 @@ import (
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-platform/account"
 	"io"
+	"mime"
 	"net/http"
+	"slices"
 )
 
 type Identity func(*http.Request) (account.Principal, iq.Delivery, string)
@@ -16,23 +18,34 @@ type Handler struct {
 	Identity Identity
 }
 
+var allowedDomains = []string{"profiles", "verification", "catalog", "reviews", "resources", "billing", "groups"}
+var allowedFields = []string{"identity", "document", "material", "refund_payee"}
+
 func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if e := d.Decode(v); e != nil {
-		return iq.ErrInvalid
+		return &iq.ErrorDetail{Base: iq.ErrInvalid, Code: iq.ErrInvalid.Error(), Reason: "invalid_parameter"}
 	}
 	if d.Decode(new(any)) != io.EOF {
-		return iq.ErrInvalid
+		return &iq.ErrorDetail{Base: iq.ErrInvalid, Code: iq.ErrInvalid.Error(), Reason: "invalid_parameter"}
 	}
 	return nil
 }
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	if r.Method != "POST" {
-		w.WriteHeader(405)
+	const queryPath = "/api/v1/information-query/query"
+	const auditPath = "/api/v1/information-query/audit/query"
+	const capabilitiesPath = "/api/v1/information-query/capabilities"
+	if r.URL.Path != queryPath && r.URL.Path != auditPath && r.URL.Path != capabilitiesPath {
+		writeCode(w, 404, "not_found")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeCode(w, 405, "method_not_allowed")
 		return
 	}
 	if h.Service == nil || h.Identity == nil {
@@ -40,41 +53,60 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, d, id := h.Identity(r)
-	var out any
-	var err error
-	switch r.URL.Path {
-	case "/api/v1/information-query/query":
-		var q iq.Query
-		err = decode(w, r, &q)
-		if err == nil {
-			out, err = h.Service.Query(r.Context(), p, id, d, q)
-		}
-	case "/api/v1/information-query/audit/query":
-		var q iq.AuditFilter
-		err = decode(w, r, &q)
-		if err == nil {
-			if d.Channel != "admin" {
-				err = h.Service.Reject(r.Context(), p, id, d, iq.ErrForbidden)
-			} else {
-				out, err = h.Service.Audit(r.Context(), p, id, q)
-			}
-		}
-	case "/api/v1/information-query/capabilities":
-		var q iq.CapabilitiesRequest
-		err = decode(w, r, &q)
-		if err == nil {
-			out, err = h.Service.Capabilities(r.Context(), p, d, q)
-			write(w, out, err)
-			return
-		}
-	default:
-		w.WriteHeader(404)
+	if !p.Valid() {
+		write(w, nil, iq.ErrUnauthenticated)
 		return
 	}
-	if errors.Is(err, iq.ErrInvalid) && out == nil {
-		err = h.Service.Reject(r.Context(), p, id, d, err)
+	reject := h.Service.Reject
+	if r.URL.Path == auditPath {
+		reject = h.Service.RejectAudit
+		if d.Channel != "admin" {
+			write(w, nil, reject(r.Context(), p, id, d, &iq.ErrorDetail{Base: iq.ErrForbidden, Code: iq.ErrForbidden.Error(), Reason: "channel_forbidden"}))
+			return
+		}
+	}
+	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" {
+		if r.URL.Path == capabilitiesPath {
+			writeCode(w, 415, "unsupported_media_type")
+			return
+		}
+		if err = reject(r.Context(), p, id, d, iq.ErrInvalid); errors.Is(err, iq.ErrInvalid) {
+			writeCode(w, 415, "unsupported_media_type")
+		} else {
+			write(w, nil, err)
+		}
+		return
+	}
+	var out any
+	if r.URL.Path == capabilitiesPath {
+		var q iq.CapabilitiesRequest
+		if err = decode(w, r, &q); err == nil {
+			out, err = h.Service.Capabilities(r.Context(), p, d, q)
+		}
+		write(w, out, err)
+		return
+	}
+	if r.URL.Path == auditPath {
+		var f iq.AuditFilter
+		if err = decode(w, r, &f); err == nil {
+			out, err = h.Service.Audit(r.Context(), p, id, f)
+		} else {
+			err = reject(r.Context(), p, id, d, err)
+		}
+	} else {
+		var q iq.Query
+		if err = decode(w, r, &q); err == nil {
+			out, err = h.Service.Query(r.Context(), p, id, d, q)
+		} else {
+			err = reject(r.Context(), p, id, d, err)
+		}
 	}
 	write(w, out, err)
+}
+func writeCode(w http.ResponseWriter, status int, code string) {
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code})
 }
 func write(w http.ResponseWriter, out any, err error) {
 	if err != nil {
@@ -89,8 +121,19 @@ func write(w http.ResponseWriter, out any, err error) {
 				code = e.err.Error()
 			}
 		}
+		resp := iq.ErrorDetail{Code: code}
+		var detail *iq.ErrorDetail
+		if errors.As(err, &detail) && detail != nil {
+			resp.Reason = detail.Reason
+			if slices.Contains(allowedDomains, detail.Domain) {
+				resp.Domain = detail.Domain
+			}
+			if slices.Contains(allowedFields, detail.Field) {
+				resp.Field = detail.Field
+			}
+		}
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]string{"code": code})
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(out)

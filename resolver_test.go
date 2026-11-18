@@ -47,7 +47,7 @@ type accountProvider struct {
 func (p *accountProvider) Query(_ context.Context, _ account.Principal, q iq.Query) ([]iq.Record, error) {
 	p.calls++
 	p.requested += q.Limit
-	if q.Kind != "account" || (q.Value != "issuer:alice" && q.Value != "issuer:bob") {
+	if q.Kind != "account" || (q.Value != (account.Principal{Issuer: "test", Subject: "alice"}).Key() && q.Value != (account.Principal{Issuer: "test", Subject: "bob"}).Key()) {
 		return nil, errors.New("raw clue reached provider")
 	}
 	result := []iq.Record{}
@@ -74,7 +74,7 @@ func resolvedFixture() (*iq.Service, *resolver, *accountProvider, iq.Query) {
 	q.Kind = "name"
 	q.Value = "same name"
 	r := &resolver{candidates: []iq.Candidate{}}
-	for i, account := range []string{"issuer:alice", "issuer:bob"} {
+	for i, account := range []string{(account.Principal{Issuer: "test", Subject: "alice"}).Key(), (account.Principal{Issuer: "test", Subject: "bob"}).Key()} {
 		r.candidates = append(r.candidates, iq.Candidate{Account: account, Source: "verification", Current: i == 0, ChangedAt: time.Unix(100, 0), Scope: q.Scope, Label: []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}}})
 	}
 	p := &accountProvider{domain: "profiles"}
@@ -113,30 +113,33 @@ func TestResolverFailureAndIsolation(t *testing.T) {
 		if failure == iq.ErrForbidden {
 			expected = failure
 		}
-		if e != expected || len(out.Groups) != 0 || p.calls != 0 {
+		if !errors.Is(e, expected) || len(out.Groups) != 0 || p.calls != 0 {
 			t.Fatal("resolver failure", e)
 		}
 	}
 	s, _, p, q := resolvedFixture()
 	s.Resolvers = nil
-	if _, e := run(s, q); e != iq.ErrUnavailable || p.calls != 0 {
+	if _, e := run(s, q); !errors.Is(e, iq.ErrUnavailable) || p.calls != 0 {
 		t.Fatal("missing resolver", e)
 	}
 	s, r, p, q := resolvedFixture()
 	s.Auth = &auth{caps: map[string]bool{"information-query.profiles.read": true}, scope: q.Scope}
 	q.Domains = []string{"profiles", "billing"}
-	if _, e := run(s, q); e != iq.ErrForbidden || r.calls != 0 || p.calls != 0 {
-		t.Fatal("IQ-04", e)
+	_, e := run(s, q)
+	var detail *iq.ErrorDetail
+	if !errors.Is(e, iq.ErrForbidden) || !errors.As(e, &detail) || detail.Reason != "domain_forbidden" || detail.Domain != "billing" || r.calls != 0 || p.calls != 0 {
+		t.Fatal("IQ-04", e, detail)
 	}
 	s, r, p, q = resolvedFixture()
 	r.candidates[0].Scope.School = "other-school"
-	if _, e := run(s, q); e != iq.ErrUnavailable || p.calls != 0 {
+	if _, e := run(s, q); !errors.Is(e, iq.ErrUnavailable) || p.calls != 0 {
 		t.Fatal("candidate scope leak", e)
 	}
 	s, _, p, q = resolvedFixture()
 	p.wrong = true
-	if _, e := run(s, q); e != iq.ErrUnavailable {
-		t.Fatal("wrong account", e)
+	_, e = run(s, q)
+	if !errors.Is(e, iq.ErrUnavailable) || !errors.As(e, &detail) || detail.Reason != "provider_unavailable" || detail.Domain != "profiles" {
+		t.Fatal("wrong account", e, detail)
 	}
 }
 func TestCompositePagination(t *testing.T) {
@@ -175,8 +178,9 @@ func TestCompositePagination(t *testing.T) {
 		t.Fatal("missing domain")
 	}
 	q.Value = "different"
-	if _, e := run(s, q); e != iq.ErrInvalid {
-		t.Fatal("cursor query binding", e)
+	var detail *iq.ErrorDetail
+	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || !errors.As(e, &detail) || detail.Reason != "cursor_mismatch" {
+		t.Fatal("cursor query binding", e, detail)
 	}
 }
 func TestCandidateChangeAndWorkBound(t *testing.T) {
@@ -187,9 +191,10 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 		t.Fatal(e)
 	}
 	q.After = out.NextCursor
-	r.candidates[0].Account = "issuer:bob"
-	if _, e = run(s, q); e != iq.ErrUnavailable {
-		t.Fatal("stale candidate accepted", e)
+	r.candidates[0].Account = (account.Principal{Issuer: "test", Subject: "bob"}).Key()
+	var detail *iq.ErrorDetail
+	if _, e = run(s, q); !errors.Is(e, iq.ErrUnavailable) || !errors.As(e, &detail) || detail.Reason != "candidate_changed" {
+		t.Fatal("stale candidate accepted", e, detail)
 	}
 	s, r, p, q := resolvedFixture()
 	q.Limit = 100
@@ -197,7 +202,7 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 	r.candidates = append(r.candidates, r.candidates...)
 	r.candidates = append(r.candidates, r.candidates...)
 	out, e = run(s, q)
-	if e != nil || p.requested > 700 || r.calls > 50 || out.NextCursor == "" {
+	if e != nil || len(out.Groups) != 16 || recordCount(out) != 48 || p.calls != 16 || r.calls != 16 || out.NextCursor != "" {
 		t.Fatal("work bound", e, p.requested, r.calls)
 	}
 }
