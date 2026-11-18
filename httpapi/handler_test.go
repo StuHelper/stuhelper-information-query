@@ -130,7 +130,6 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	aResp, err := client.QueryInformationAuditWithResponse(context.Background(), sdk.AuditFilter{
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Purpose: "查阅审计记录",
-		After:   "",
 		Limit:   20,
 	})
 	if err != nil {
@@ -147,7 +146,6 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	botAuditResp, err := client.QueryInformationAuditWithResponse(context.Background(), sdk.AuditFilter{
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Purpose: "机器人越权查审计",
-		After:   "",
 		Limit:   10,
 	})
 	if err != nil {
@@ -592,3 +590,35 @@ func TestMalformedCapabilitiesBypassAudit(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditFilterOptionalAfterInSDK(t *testing.T) {
+	actor := account.Principal{Issuer: "issuer", Subject: "auditor"}
+	srv := httptest.NewServer(httpapi.Handler{
+		Service: &iq.Service{Auth: allowAll{}, Repo: &auditRepo{}},
+		Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+			return actor, iq.Delivery{Channel: "admin"}, "req-audit"
+		},
+	})
+	defer srv.Close()
+
+	client, err := sdk.NewClientWithResponses(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// After is omitted (nil) on first-page SDK calls.
+	resp, err := client.QueryInformationAuditWithResponse(context.Background(), sdk.AuditFilter{
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Purpose: "first-page without explicit after",
+		Limit:   20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil {
+		t.Fatalf("status=%d body=%s", resp.StatusCode(), string(resp.Body))
+	}
+}
+
+type allowAll struct{}
+
+func (allowAll) Evaluate(context.Context, account.Principal, string, admin.Scope) error { return nil }

@@ -94,7 +94,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 				if errors.Is(e, ErrForbidden) {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "forbidden", Duration: resolveDuration})
 					resolverDomain := ""
-					if q.Kind == "name" || q.Kind == "student_id" {
+					if q.Kind == "name" || q.Kind == "student_id" || q.Kind == "staff_id" {
 						resolverDomain = "verification"
 					}
 					return out, detailErr(ErrForbidden, "domain_forbidden", resolverDomain, "")
@@ -165,13 +165,32 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		pq.Kind = "account"
 		pq.Value = candidate.Account
 		pq.After = cursor.Record
-		pq.Limit = remaining
-		page, e := s.queryRecords(ctx, p, pq, a, &payload)
+		pq.Limit = min(remaining+1, 100)
+		page, e := s.queryRecords(ctx, p, pq, a, &payload, remaining)
 		if e != nil {
 			return out, e
 		}
+		// Confirm truncation with one authorized record beyond this candidate's displayed page.
+		// At the provider's 100-row ceiling the lookahead uses a separate exclusive cursor.
+		hasMore := len(page.Items) > remaining
+		if hasMore {
+			page.Items = page.Items[:remaining]
+		} else if len(page.Items) == 100 {
+			probe := pq
+			probe.After = page.Items[99].ID
+			probe.Limit = 1
+			extra, err := s.queryRecords(ctx, p, probe, a, &payload, 0)
+			if err != nil {
+				return out, err
+			}
+			hasMore = len(extra.Items) > 0
+		}
+		page.NextCursor = ""
+		if hasMore {
+			page.NextCursor = page.Items[len(page.Items)-1].ID
+		}
 		if cursor.Record == "" || len(page.Items) > 0 {
-			out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items})
+			out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items, HasMore: page.NextCursor != ""})
 		}
 		remaining -= len(page.Items)
 		if page.NextCursor != "" {

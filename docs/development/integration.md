@@ -14,7 +14,7 @@ updated: 2026-11-19
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
 | POST | `/api/v1/information-query/capabilities` | 当前操作者在指定范围下的只读能力与装配预检 |
 
-OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。student_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate 与 items，候选保留 account、source、current、changed_at、scope 和掩码 label。
+OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、staff_id、qq、account。student_id 与 staff_id 必须指定学校。响应 groups 按候选分组，每组包含 candidate、items 与 has_more，候选保留 account、source、current、changed_at、scope 和区分标签 label。
 
 0.2.0 具有不兼容变化：subject 改为 account，student_number 改为 student_id，退款收款字段类别改为 refund_payee，平铺 items 改为 groups。消费者需重新生成 SDK，更新分组展示并清除旧游标。两个 HTTP 路径保持不变。
 
@@ -24,7 +24,9 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 
 多副本宿主可为 Service.CursorKey 注入同一独立的 32 字节随机密钥。默认密钥在进程启动时生成。旧格式、密钥不同或轮换后的游标返回 400，客户端需从首页重新查询。
 
-候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每页最多检查 50 个候选、返回 100 条记录。按域前缀顺序取剩余条数，满页即停，续页只给游标所属域传入记录位置。掩码和省略后，返回字段与候选标签的文本预算为 1 MiB，单域单次原始字段文本上限为 8 MiB。满页后可能需要一次空查询确认结束。客户端持续读取到 next_cursor 为空。
+候选按 Resolver 的顺序处理，各候选内按全局记录 ID 排序。每页最多检查 50 个候选、返回 100 条记录。按域前缀顺序取数，最多多读一条可见记录确认当前候选的 has_more。续页只给游标所属域传入记录位置。
+
+掩码和省略后，返回字段与候选标签的文本预算为 1 MiB，单域单次原始字段文本上限为 8 MiB。单次提供方调用上限为 100 条，满 100 条时单独探测一条。客户端持续读取到 next_cursor 为空。
 
 已授权但未装配的业务域列入 unavailable_domains。Resolver 缺失、解析故障或 Provider 故障返回 503，不猜测账号。没有候选返回空 groups。申请未授权域返回 403，响应不含部分结果；已授权域可单独查询。
 
@@ -44,9 +46,9 @@ Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Ac
 
 Account 使用平台 Principal.Key() 生成的完整账号键，最多 2048 字节。直接输入无效账号键返回 400，解析器给出无效账号键返回 503，两种情况均在访问业务域前结束。其他线索最多 256 个 Unicode 码点。
 
-Service.Resolvers 按 kind 装配：name、student_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
+Service.Resolvers 按 kind 装配：name、student_id、staff_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
 
-Resolver 的 Label 只含区分候选所需的掩码字段，不得把原始线索放入来源、账号键或游标。编排再次检查候选范围、掩码和字段大小。候选披露之前检查所有申请域的权限，并在返回前提交审计。
+Resolver 的 Label 仅含区分重名与师生身份所需的掩码字段或非敏感业务标签（如院系、学生/教师角色，均设 masked=true），不得把原始线索放入来源、账号键或游标。编排再次检查候选范围、掩码和字段大小。候选披露之前检查所有申请域的权限，并在返回前提交审计。
 
 Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整账号键，先授权、按范围过滤，再按 ID 升序分页。After 是排他记录 ID，Limit 上限 100。记录 ID 使用 `<domain>:<id>`，Subject 必须与查询账号一致。
 

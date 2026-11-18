@@ -65,8 +65,11 @@ export interface components {
             module: string;
         };
         Query: {
-            /** @enum {string} */
-            kind: "name" | "student_id" | "qq" | "account";
+            /**
+             * @description Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
+             * @enum {string}
+             */
+            kind: "name" | "student_id" | "staff_id" | "qq" | "account";
             /** @description Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points. */
             value: string;
             scope: components["schemas"]["Scope"];
@@ -125,8 +128,8 @@ export interface components {
             scope: components["schemas"]["Scope"];
             /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters. */
             purpose: string;
-            /** @description Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page. */
-            after: string;
+            /** @description Omitted or empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page. */
+            after?: string;
             limit: number;
             /** @description Optional exact operator account key filter. */
             actor?: string;
@@ -183,12 +186,14 @@ export interface components {
              */
             changed_at: string;
             scope: components["schemas"]["Scope"];
-            /** @description Masked distinguishing fields only. */
+            /** @description Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms. */
             label: components["schemas"]["Field"][];
         };
         CandidateGroup: {
             candidate: components["schemas"]["Candidate"];
             items: components["schemas"]["Record"][];
+            /** @description True when this candidate has unreturned domain records continuing onto a subsequent page. */
+            has_more: boolean;
         };
         CapabilitiesRequest: {
             scope?: components["schemas"]["Scope"];
@@ -202,7 +207,7 @@ export interface components {
             /** @description Domains with registered providers on the current host. */
             available_domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
             /** @description Query lead kinds currently supported on the host. */
-            available_kinds: ("name" | "student_id" | "qq" | "account")[];
+            available_kinds: ("name" | "student_id" | "qq" | "account" | "staff_id")[];
             /** @description Whether the current principal may read audit logs in the evaluated scope on the current channel. */
             audit_readable: boolean;
             /** @description Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope. */

@@ -39,6 +39,7 @@ func (r *resolver) Resolve(_ context.Context, _ account.Principal, l iq.Lead) ([
 }
 
 type accountProvider struct {
+	size             int
 	domain           string
 	calls, requested int
 	wrong            bool
@@ -51,8 +52,15 @@ func (p *accountProvider) Query(_ context.Context, _ account.Principal, q iq.Que
 		return nil, errors.New("raw clue reached provider")
 	}
 	result := []iq.Record{}
-	for i := 1; i <= 3; i++ {
+	size := p.size
+	if size == 0 {
+		size = 3
+	}
+	for i := 1; i <= size; i++ {
 		id := fmt.Sprintf("%s:%d", p.domain, i)
+		if size >= 100 {
+			id = fmt.Sprintf("%s:%03d", p.domain, i)
+		}
 		if id <= q.After {
 			continue
 		}
@@ -75,15 +83,19 @@ func resolvedFixture() (*iq.Service, *resolver, *accountProvider, iq.Query) {
 	q.Value = "same name"
 	r := &resolver{candidates: []iq.Candidate{}}
 	for i, account := range []string{(account.Principal{Issuer: "test", Subject: "alice"}).Key(), (account.Principal{Issuer: "test", Subject: "bob"}).Key()} {
-		r.candidates = append(r.candidates, iq.Candidate{Account: account, Source: "verification", Current: i == 0, ChangedAt: time.Unix(100, 0), Scope: q.Scope, Label: []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}}})
+		role := "student"
+		if i == 1 {
+			role = "teacher"
+		}
+		r.candidates = append(r.candidates, iq.Candidate{Account: account, Source: "verification", Current: i == 0, ChangedAt: time.Unix(100, 0), Scope: q.Scope, Label: []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}, {Name: "department", Category: "business", Value: "计算机学院", Masked: true}, {Name: "role", Category: "business", Value: role, Masked: true}}})
 	}
 	p := &accountProvider{domain: "profiles"}
 	s.Providers = map[string]iq.Provider{"profiles": p}
-	s.Resolvers = map[string]iq.Resolver{"name": r, "student_id": r, "qq": r}
+	s.Resolvers = map[string]iq.Resolver{"name": r, "student_id": r, "staff_id": r, "qq": r}
 	return s, r, p, q
 }
 func TestResolveKindsGroupsAndHistory(t *testing.T) {
-	for _, kind := range []string{"name", "student_id", "qq"} {
+	for _, kind := range []string{"name", "student_id", "staff_id", "qq"} {
 		t.Run(kind, func(t *testing.T) {
 			s, r, p, q := resolvedFixture()
 			q.Kind = kind
@@ -204,5 +216,50 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 	out, e = run(s, q)
 	if e != nil || len(out.Groups) != 16 || recordCount(out) != 48 || p.calls != 16 || r.calls != 16 || out.NextCursor != "" {
 		t.Fatal("work bound", e, p.requested, r.calls)
+	}
+}
+
+func TestCandidateGroupHasMoreFlag(t *testing.T) {
+	t.Run("provider ceiling", func(t *testing.T) {
+		for _, size := range []int{100, 101} {
+			svc, resolver, p, q := resolvedFixture()
+			p.size = size
+			q.Kind, q.Value, q.Limit = "account", resolver.candidates[0].Account, 100
+			first, err := run(svc, q)
+			if err != nil || len(first.Groups) != 1 || len(first.Groups[0].Items) != 100 || first.Groups[0].HasMore != (size > 100) || (first.NextCursor != "") != (size > 100) || p.calls != 2 || p.requested != 101 {
+				t.Fatalf("size=%d has continuation=%t calls=%d requested=%d err=%v", size, first.NextCursor != "", p.calls, p.requested, err)
+			}
+		}
+	})
+
+	t.Run("exactly full", func(t *testing.T) {
+		svc, _, _, q := resolvedFixture()
+		q.Limit = 3
+		first, e := run(svc, q)
+		if e != nil || len(first.Groups) != 1 || first.Groups[0].HasMore || first.NextCursor == "" {
+			t.Fatalf("exactly full first candidate: %+v %v", first, e)
+		}
+		q.After = first.NextCursor
+		last, e := run(svc, q)
+		if e != nil || len(last.Groups) != 1 || last.Groups[0].Candidate.Account == first.Groups[0].Candidate.Account || last.Groups[0].HasMore || last.NextCursor != "" {
+			t.Fatalf("final candidate: %+v %v", last, e)
+		}
+	})
+
+	s, _, _, q := resolvedFixture()
+	// Each candidate has 3 records in profiles. Limit=2 truncates alice on page 1 (HasMore=true),
+	// then page 2 finishes alice (1 item, HasMore=false) and starts bob (1 item, HasMore=true).
+	q.Limit = 2
+	page1, err := run(s, q)
+	if err != nil || len(page1.Groups) != 1 || len(page1.Groups[0].Items) != 2 || !page1.Groups[0].HasMore {
+		t.Fatalf("page 1 expected single candidate with HasMore=true, got %+v err=%v", page1, err)
+	}
+	q.After = page1.NextCursor
+	page2, err := run(s, q)
+	if err != nil || len(page2.Groups) != 2 {
+		t.Fatalf("page 2 expected 2 groups, got %+v err=%v", page2, err)
+	}
+	if page2.Groups[0].HasMore || !page2.Groups[1].HasMore {
+		t.Fatalf("page 2 expected [HasMore=false, HasMore=true], got [%v, %v]", page2.Groups[0].HasMore, page2.Groups[1].HasMore)
 	}
 }

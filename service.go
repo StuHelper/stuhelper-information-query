@@ -15,7 +15,7 @@ import (
 
 var domains = []string{"profiles", "verification", "catalog", "reviews", "resources", "billing", "groups"}
 var categories = []string{"identity", "document", "material", "refund_payee"}
-var kinds = []string{"name", "student_id", "qq", "account"}
+var kinds = []string{"name", "student_id", "staff_id", "qq", "account"}
 var auditChannels = []string{"admin", "bot_private", "bot_group", "unknown"}
 var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rejected", "provider.query"}
 var auditResults = []string{"success", "denied", "invalid_request", "unauthenticated", "unavailable"}
@@ -41,7 +41,7 @@ type Service struct {
 	CursorKey  *[32]byte
 	Auth       Authorizer
 	Repo       Repository
-	Resolvers  map[string]Resolver // name/student_id: verification; qq: qq-binding
+	Resolvers  map[string]Resolver // name/student_id/staff_id: verification; qq: qq-binding
 	Providers  map[string]Provider // immutable after host assembly
 	BotEnabled bool                // disabled by default, including platform administrators
 	Now        func() time.Time
@@ -216,7 +216,7 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !clean(id, 128) || !cleanText(q.Purpose, 512) || (q.Kind != "account" && !validQueryValue(q.Kind, q.Value)) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains(kinds, q.Kind) {
 		return out, detailErr(ErrInvalid, "invalid_parameter", "", "")
 	}
-	if q.Kind == "student_id" && q.Scope.School == "*" {
+	if (q.Kind == "student_id" || q.Kind == "staff_id") && q.Scope.School == "*" {
 		return out, detailErr(ErrInvalid, "school_required", "", "")
 	}
 	if s.Auth != nil {
@@ -269,7 +269,7 @@ type recordPage struct {
 	NextCursor string
 }
 
-func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query, a *Audit, payloadBytes *int) (out recordPage, err error) {
+func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query, a *Audit, payloadBytes *int, displayLimit int) (out recordPage, err error) {
 	out = recordPage{Items: []Record{}}
 	for _, domain := range q.Domains {
 		scope := q.Scope
@@ -359,7 +359,9 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 						continue
 					}
 				}
-				*payloadBytes += len(f.Name) + len(f.Value)
+				if len(out.Items) < displayLimit {
+					*payloadBytes += len(f.Name) + len(f.Value)
+				}
 				if *payloadBytes > 1<<20 {
 					s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Domain: domain, Kind: q.Kind, Code: "payload_limit", Duration: callDuration})
 					return out, detailErr(ErrUnavailable, "payload_too_large", domain, "")
@@ -552,7 +554,7 @@ func (s Service) Capabilities(ctx context.Context, p account.Principal, d Delive
 			out.AllowedFields = append(out.AllowedFields, category)
 		}
 	}
-	for _, kind := range []string{"name", "student_id", "qq", "account"} {
+	for _, kind := range []string{"name", "student_id", "staff_id", "qq", "account"} {
 		if kind == "account" || s.Resolvers[kind] != nil {
 			out.AvailableKinds = append(out.AvailableKinds, kind)
 		}

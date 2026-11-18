@@ -14,14 +14,19 @@ func TestContinuationKeepsGroupIdentityAndSkipsExhaustedTarget(t *testing.T) {
 	now := time.Unix(120, 0)
 	s.Now = func() time.Time { return now }
 	first := now
+	var finalPageCursor string
 	for i := 0; i < 3; i++ {
+		finalPageCursor = q.After
 		out, err := run(s, q)
-		if err != nil || len(out.Groups) != 1 || len(out.Groups[0].Items) != 1 || !out.Groups[0].Candidate.ChangedAt.Equal(first) || out.NextCursor == "" {
+		if err != nil || len(out.Groups) != 1 || len(out.Groups[0].Items) != 1 || !out.Groups[0].Candidate.ChangedAt.Equal(first) || (out.NextCursor != "") != (i < 2) || out.Groups[0].HasMore != (i < 2) {
 			t.Fatalf("page %d: %+v %v", i, out, err)
 		}
 		q.After = out.NextCursor
 		now = now.Add(time.Minute)
 	}
+	// A previously issued cursor must skip the group if the provider now has no remaining facts.
+	q.After = finalPageCursor
+	s.Providers["profiles"] = &provider{}
 	out, err := run(s, q)
 	last := audits.records[len(audits.records)-1]
 	if err != nil || len(out.Groups) != 0 || out.NextCursor != "" || last.Count != 0 || len(last.Targets) != 0 || !last.CreatedAt.Equal(now) {

@@ -117,7 +117,7 @@ type Audit struct {
 type AuditFilter struct {
 	Scope        admin.Scope `json:"scope"`
 	Purpose      string      `json:"purpose"`
-	After        string      `json:"after"`
+	After        string      `json:"after,omitempty"`
 	Limit        int         `json:"limit"`
 	Actor        string      `json:"actor,omitempty"`
 	Target       string      `json:"target,omitempty"`
@@ -159,6 +159,7 @@ type Candidate struct {
 type CandidateGroup struct {
 	Candidate Candidate `json:"candidate"`
 	Items     []Record  `json:"items"`
+	HasMore   bool      `json:"has_more"`
 }
 
 type CapabilitiesRequest struct {
@@ -176,7 +177,9 @@ type Capabilities struct {
 }
 
 // Resolver filters effective scope before stable exclusive pagination (maximum 50).
-// Labels must be masked; identifiers and cursors must not contain raw lead values.
+// Labels must set Masked=true (using masked identity fields or non-sensitive business
+// attributes such as college/department and student/teacher role to disambiguate
+// homonyms); identifiers and cursors must not contain raw lead values.
 type Resolver interface {
 	Resolve(context.Context, account.Principal, Lead) ([]Candidate, string, error)
 }

@@ -220,6 +220,7 @@ const (
 	CapabilitiesAvailableKindsAccount   CapabilitiesAvailableKinds = "account"
 	CapabilitiesAvailableKindsName      CapabilitiesAvailableKinds = "name"
 	CapabilitiesAvailableKindsQq        CapabilitiesAvailableKinds = "qq"
+	CapabilitiesAvailableKindsStaffId   CapabilitiesAvailableKinds = "staff_id"
 	CapabilitiesAvailableKindsStudentId CapabilitiesAvailableKinds = "student_id"
 )
 
@@ -231,6 +232,8 @@ func (e CapabilitiesAvailableKinds) Valid() bool {
 	case CapabilitiesAvailableKindsName:
 		return true
 	case CapabilitiesAvailableKindsQq:
+		return true
+	case CapabilitiesAvailableKindsStaffId:
 		return true
 	case CapabilitiesAvailableKindsStudentId:
 		return true
@@ -451,6 +454,7 @@ const (
 	Account   QueryKind = "account"
 	Name      QueryKind = "name"
 	Qq        QueryKind = "qq"
+	StaffId   QueryKind = "staff_id"
 	StudentId QueryKind = "student_id"
 )
 
@@ -462,6 +466,8 @@ func (e QueryKind) Valid() bool {
 	case Name:
 		return true
 	case Qq:
+		return true
+	case StaffId:
 		return true
 	case StudentId:
 		return true
@@ -508,8 +514,8 @@ type AuditFilter struct {
 	// Actor Optional exact operator account key filter.
 	Actor *string `json:"actor,omitempty"`
 
-	// After Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page.
-	After string `json:"after"`
+	// After Omitted or empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page.
+	After *string `json:"after,omitempty"`
 
 	// Channel Optional delivery channel filter.
 	Channel *string `json:"channel,omitempty"`
@@ -546,7 +552,7 @@ type Candidate struct {
 	ChangedAt time.Time `json:"changed_at"`
 	Current   bool      `json:"current"`
 
-	// Label Masked distinguishing fields only.
+	// Label Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms.
 	Label  []Field `json:"label"`
 	Scope  Scope   `json:"scope"`
 	Source string  `json:"source"`
@@ -555,7 +561,10 @@ type Candidate struct {
 // CandidateGroup defines model for CandidateGroup.
 type CandidateGroup struct {
 	Candidate Candidate `json:"candidate"`
-	Items     []Record  `json:"items"`
+
+	// HasMore True when this candidate has unreturned domain records continuing onto a subsequent page.
+	HasMore bool     `json:"has_more"`
+	Items   []Record `json:"items"`
 }
 
 // Capabilities defines model for Capabilities.
@@ -639,7 +648,9 @@ type Query struct {
 
 	// Fields Sensitive categories explicitly requested; omitted means masked identity fields only.
 	Fields *[]QueryFields `json:"fields,omitempty"`
-	Kind   QueryKind      `json:"kind"`
+
+	// Kind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
+	Kind QueryKind `json:"kind"`
 
 	// Limit Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page.
 	Limit int `json:"limit"`
@@ -658,7 +669,7 @@ type QueryDomains string
 // QueryFields defines model for Query.Fields.
 type QueryFields string
 
-// QueryKind defines model for Query.Kind.
+// QueryKind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
 type QueryKind string
 
 // Record defines model for Record.

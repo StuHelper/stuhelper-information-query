@@ -31,7 +31,7 @@ func TestOrderedDomainBudgetAndLocalCursor(t *testing.T) {
 	}
 	q.After = out.NextCursor
 	out, err = run(s, q)
-	if err != nil || len(p.callsSeen) != 1 || p.callsSeen[0].After != "" || p.callsSeen[0].Limit != 1 || out.Groups[0].Items[1].ID != "profiles:1" {
+	if err != nil || len(p.callsSeen) != 1 || p.callsSeen[0].After != "" || p.callsSeen[0].Limit != 2 || out.Groups[0].Items[1].ID != "profiles:1" {
 		t.Fatal("domain transition", err, p.callsSeen)
 	}
 	q.After = out.NextCursor

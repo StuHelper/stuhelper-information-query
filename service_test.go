@@ -181,6 +181,10 @@ func TestInvalidAndAnonymous(t *testing.T) {
 	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || p.calls != 0 || len(r.records) != 2 {
 		t.Fatal(e)
 	}
+	q.Kind = "staff_id"
+	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || p.calls != 0 || len(r.records) != 3 {
+		t.Fatal("staff_id must require explicit school", e)
+	}
 }
 
 type platformIdentity struct{}
