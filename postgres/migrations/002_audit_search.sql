@@ -1,4 +1,3 @@
-CREATE INDEX IF NOT EXISTS audit_school_id_desc ON information_query.audit(school,id DESC);
 CREATE INDEX IF NOT EXISTS audit_actor_id_desc ON information_query.audit((body->>'actor'),id DESC);
 CREATE INDEX IF NOT EXISTS audit_action_id_desc ON information_query.audit((body->>'action'),id DESC);
 CREATE INDEX IF NOT EXISTS audit_result_id_desc ON information_query.audit((body->>'result'),id DESC);
