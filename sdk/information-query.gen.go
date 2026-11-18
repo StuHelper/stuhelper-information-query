@@ -13,7 +13,117 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for AuditAction.
+const (
+	AuditActionAuditQuery    AuditAction = "audit.query"
+	AuditActionAuditRejected AuditAction = "audit.rejected"
+	AuditActionProviderQuery AuditAction = "provider.query"
+	AuditActionQuery         AuditAction = "query"
+	AuditActionQueryRejected AuditAction = "query.rejected"
+	AuditActionUnknown       AuditAction = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditAction enum.
+func (e AuditAction) Valid() bool {
+	switch e {
+	case AuditActionAuditQuery:
+		return true
+	case AuditActionAuditRejected:
+		return true
+	case AuditActionProviderQuery:
+		return true
+	case AuditActionQuery:
+		return true
+	case AuditActionQueryRejected:
+		return true
+	case AuditActionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditChannel.
+const (
+	AuditChannelAdmin      AuditChannel = "admin"
+	AuditChannelBotGroup   AuditChannel = "bot_group"
+	AuditChannelBotPrivate AuditChannel = "bot_private"
+	AuditChannelUnknown    AuditChannel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditChannel enum.
+func (e AuditChannel) Valid() bool {
+	switch e {
+	case AuditChannelAdmin:
+		return true
+	case AuditChannelBotGroup:
+		return true
+	case AuditChannelBotPrivate:
+		return true
+	case AuditChannelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditFields.
+const (
+	AuditFieldsDocument    AuditFields = "document"
+	AuditFieldsIdentity    AuditFields = "identity"
+	AuditFieldsMaterial    AuditFields = "material"
+	AuditFieldsRefundPayee AuditFields = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the AuditFields enum.
+func (e AuditFields) Valid() bool {
+	switch e {
+	case AuditFieldsDocument:
+		return true
+	case AuditFieldsIdentity:
+		return true
+	case AuditFieldsMaterial:
+		return true
+	case AuditFieldsRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditResult.
+const (
+	AuditResultDenied          AuditResult = "denied"
+	AuditResultInvalidRequest  AuditResult = "invalid_request"
+	AuditResultSuccess         AuditResult = "success"
+	AuditResultUnauthenticated AuditResult = "unauthenticated"
+	AuditResultUnavailable     AuditResult = "unavailable"
+	AuditResultUnknown         AuditResult = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditResult enum.
+func (e AuditResult) Valid() bool {
+	switch e {
+	case AuditResultDenied:
+		return true
+	case AuditResultInvalidRequest:
+		return true
+	case AuditResultSuccess:
+		return true
+	case AuditResultUnauthenticated:
+		return true
+	case AuditResultUnavailable:
+		return true
+	case AuditResultUnknown:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for ErrorDomain.
 const (
@@ -74,64 +184,64 @@ func (e ErrorField) Valid() bool {
 
 // Defines values for ErrorReason.
 const (
-	AuditForbidden      ErrorReason = "audit_forbidden"
-	AuditUnavailable    ErrorReason = "audit_unavailable"
-	AuthUnavailable     ErrorReason = "auth_unavailable"
-	BotDisabled         ErrorReason = "bot_disabled"
-	BotForbidden        ErrorReason = "bot_forbidden"
-	CandidateChanged    ErrorReason = "candidate_changed"
-	ChannelForbidden    ErrorReason = "channel_forbidden"
-	CursorMismatch      ErrorReason = "cursor_mismatch"
-	DomainForbidden     ErrorReason = "domain_forbidden"
-	FieldForbidden      ErrorReason = "field_forbidden"
-	InvalidAccountKey   ErrorReason = "invalid_account_key"
-	InvalidParameter    ErrorReason = "invalid_parameter"
-	InvalidScope        ErrorReason = "invalid_scope"
-	PayloadTooLarge     ErrorReason = "payload_too_large"
-	ProviderUnavailable ErrorReason = "provider_unavailable"
-	ResolverUnavailable ErrorReason = "resolver_unavailable"
-	SchoolRequired      ErrorReason = "school_required"
-	Unauthenticated     ErrorReason = "unauthenticated"
+	ErrorReasonAuditForbidden      ErrorReason = "audit_forbidden"
+	ErrorReasonAuditUnavailable    ErrorReason = "audit_unavailable"
+	ErrorReasonAuthUnavailable     ErrorReason = "auth_unavailable"
+	ErrorReasonBotDisabled         ErrorReason = "bot_disabled"
+	ErrorReasonBotForbidden        ErrorReason = "bot_forbidden"
+	ErrorReasonCandidateChanged    ErrorReason = "candidate_changed"
+	ErrorReasonChannelForbidden    ErrorReason = "channel_forbidden"
+	ErrorReasonCursorMismatch      ErrorReason = "cursor_mismatch"
+	ErrorReasonDomainForbidden     ErrorReason = "domain_forbidden"
+	ErrorReasonFieldForbidden      ErrorReason = "field_forbidden"
+	ErrorReasonInvalidAccountKey   ErrorReason = "invalid_account_key"
+	ErrorReasonInvalidParameter    ErrorReason = "invalid_parameter"
+	ErrorReasonInvalidScope        ErrorReason = "invalid_scope"
+	ErrorReasonPayloadTooLarge     ErrorReason = "payload_too_large"
+	ErrorReasonProviderUnavailable ErrorReason = "provider_unavailable"
+	ErrorReasonResolverUnavailable ErrorReason = "resolver_unavailable"
+	ErrorReasonSchoolRequired      ErrorReason = "school_required"
+	ErrorReasonUnauthenticated     ErrorReason = "unauthenticated"
 )
 
 // Valid indicates whether the value is a known member of the ErrorReason enum.
 func (e ErrorReason) Valid() bool {
 	switch e {
-	case AuditForbidden:
+	case ErrorReasonAuditForbidden:
 		return true
-	case AuditUnavailable:
+	case ErrorReasonAuditUnavailable:
 		return true
-	case AuthUnavailable:
+	case ErrorReasonAuthUnavailable:
 		return true
-	case BotDisabled:
+	case ErrorReasonBotDisabled:
 		return true
-	case BotForbidden:
+	case ErrorReasonBotForbidden:
 		return true
-	case CandidateChanged:
+	case ErrorReasonCandidateChanged:
 		return true
-	case ChannelForbidden:
+	case ErrorReasonChannelForbidden:
 		return true
-	case CursorMismatch:
+	case ErrorReasonCursorMismatch:
 		return true
-	case DomainForbidden:
+	case ErrorReasonDomainForbidden:
 		return true
-	case FieldForbidden:
+	case ErrorReasonFieldForbidden:
 		return true
-	case InvalidAccountKey:
+	case ErrorReasonInvalidAccountKey:
 		return true
-	case InvalidParameter:
+	case ErrorReasonInvalidParameter:
 		return true
-	case InvalidScope:
+	case ErrorReasonInvalidScope:
 		return true
-	case PayloadTooLarge:
+	case ErrorReasonPayloadTooLarge:
 		return true
-	case ProviderUnavailable:
+	case ErrorReasonProviderUnavailable:
 		return true
-	case ResolverUnavailable:
+	case ErrorReasonResolverUnavailable:
 		return true
-	case SchoolRequired:
+	case ErrorReasonSchoolRequired:
 		return true
-	case Unauthenticated:
+	case ErrorReasonUnauthenticated:
 		return true
 	default:
 		return false
@@ -167,31 +277,31 @@ func (e FieldCategory) Valid() bool {
 
 // Defines values for QueryDomains.
 const (
-	QueryDomainsBilling      QueryDomains = "billing"
-	QueryDomainsCatalog      QueryDomains = "catalog"
-	QueryDomainsGroups       QueryDomains = "groups"
-	QueryDomainsProfiles     QueryDomains = "profiles"
-	QueryDomainsResources    QueryDomains = "resources"
-	QueryDomainsReviews      QueryDomains = "reviews"
-	QueryDomainsVerification QueryDomains = "verification"
+	Billing      QueryDomains = "billing"
+	Catalog      QueryDomains = "catalog"
+	Groups       QueryDomains = "groups"
+	Profiles     QueryDomains = "profiles"
+	Resources    QueryDomains = "resources"
+	Reviews      QueryDomains = "reviews"
+	Verification QueryDomains = "verification"
 )
 
 // Valid indicates whether the value is a known member of the QueryDomains enum.
 func (e QueryDomains) Valid() bool {
 	switch e {
-	case QueryDomainsBilling:
+	case Billing:
 		return true
-	case QueryDomainsCatalog:
+	case Catalog:
 		return true
-	case QueryDomainsGroups:
+	case Groups:
 		return true
-	case QueryDomainsProfiles:
+	case Profiles:
 		return true
-	case QueryDomainsResources:
+	case Resources:
 		return true
-	case QueryDomainsReviews:
+	case Reviews:
 		return true
-	case QueryDomainsVerification:
+	case Verification:
 		return true
 	default:
 		return false
@@ -248,28 +358,64 @@ func (e QueryKind) Valid() bool {
 
 // Audit defines model for Audit.
 type Audit struct {
-	Action      string    `json:"action"`
-	Actor       string    `json:"actor"`
-	Basis       []string  `json:"basis"`
-	Channel     string    `json:"channel"`
-	Count       int       `json:"count"`
-	CreatedAt   time.Time `json:"created_at"`
-	Fields      []string  `json:"fields"`
-	Id          string    `json:"id"`
-	Purpose     string    `json:"purpose"`
-	RequestId   string    `json:"request_id"`
-	Result      string    `json:"result"`
-	Scope       Scope     `json:"scope"`
-	TargetGroup string    `json:"target_group"`
-	Targets     []string  `json:"targets"`
+	Action      AuditAction   `json:"action"`
+	Actor       string        `json:"actor"`
+	Basis       []string      `json:"basis"`
+	Channel     AuditChannel  `json:"channel"`
+	Count       int           `json:"count"`
+	CreatedAt   time.Time     `json:"created_at"`
+	Fields      []AuditFields `json:"fields"`
+	Id          string        `json:"id"`
+	Purpose     string        `json:"purpose"`
+	RequestId   string        `json:"request_id"`
+	Result      AuditResult   `json:"result"`
+	Scope       Scope         `json:"scope"`
+	TargetGroup string        `json:"target_group"`
+	Targets     []string      `json:"targets"`
 }
+
+// AuditAction defines model for Audit.Action.
+type AuditAction string
+
+// AuditChannel defines model for Audit.Channel.
+type AuditChannel string
+
+// AuditFields defines model for Audit.Fields.
+type AuditFields string
+
+// AuditResult defines model for Audit.Result.
+type AuditResult string
 
 // AuditFilter defines model for AuditFilter.
 type AuditFilter struct {
-	After   string `json:"after"`
-	Limit   int    `json:"limit"`
+	// Action Optional audit action filter.
+	Action *string `json:"action,omitempty"`
+
+	// Actor Optional exact operator account key filter.
+	Actor *string `json:"actor,omitempty"`
+
+	// After Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page.
+	After string `json:"after"`
+
+	// Channel Optional delivery channel filter.
+	Channel *string `json:"channel,omitempty"`
+
+	// CreatedFrom Optional inclusive lower bound on audit creation time.
+	CreatedFrom *time.Time `json:"created_from,omitempty"`
+
+	// CreatedUntil Optional inclusive upper bound on audit creation time.
+	CreatedUntil *time.Time `json:"created_until,omitempty"`
+	Limit        int        `json:"limit"`
+
+	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters.
 	Purpose string `json:"purpose"`
-	Scope   Scope  `json:"scope"`
+
+	// Result Optional execution result filter.
+	Result *string `json:"result,omitempty"`
+	Scope  Scope   `json:"scope"`
+
+	// Target Optional target account key matched against recorded audit targets.
+	Target *string `json:"target,omitempty"`
 }
 
 // AuditPage defines model for AuditPage.
@@ -280,7 +426,9 @@ type AuditPage struct {
 
 // Candidate defines model for Candidate.
 type Candidate struct {
-	Account   string    `json:"account"`
+	Account string `json:"account"`
+
+	// ChangedAt For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time.
 	ChangedAt time.Time `json:"changed_at"`
 	Current   bool      `json:"current"`
 
@@ -332,7 +480,7 @@ type FieldCategory string
 
 // Query defines model for Query.
 type Query struct {
-	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation.
+	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant.
 	After   *string        `json:"after,omitempty"`
 	Domains []QueryDomains `json:"domains"`
 
@@ -341,10 +489,14 @@ type Query struct {
 	Kind   QueryKind      `json:"kind"`
 
 	// Limit Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page.
-	Limit   int    `json:"limit"`
+	Limit int `json:"limit"`
+
+	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed.
 	Purpose string `json:"purpose"`
 	Scope   Scope  `json:"scope"`
-	Value   string `json:"value"`
+
+	// Value Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points.
+	Value string `json:"value"`
 }
 
 // QueryDomains defines model for Query.Domains.
@@ -705,6 +857,11 @@ type ClientWithResponsesInterface interface {
 	QueryInformationWithResponse(ctx context.Context, body QueryInformationJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationResponse, error)
 }
 
+// QueryInformationAuditResponse405Headers the declared response headers of an HTTP 405 response for QueryInformationAudit
+type QueryInformationAuditResponse405Headers struct {
+	Allow *string
+}
+
 type QueryInformationAuditResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -716,8 +873,16 @@ type QueryInformationAuditResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON405 the response for an HTTP 405 `application/json` response
+	JSON405 *Error
+	// JSON415 the response for an HTTP 415 `application/json` response
+	JSON415 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
+	// Headers405 the parsed response headers for an HTTP 405 response
+	Headers405 *QueryInformationAuditResponse405Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -738,6 +903,21 @@ func (r QueryInformationAuditResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r QueryInformationAuditResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON405 returns the response for an HTTP 405 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON405() *Error {
+	return r.JSON405
+}
+
+// GetJSON415 returns the response for an HTTP 415 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON415() *Error {
+	return r.JSON415
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -774,6 +954,11 @@ func (r QueryInformationAuditResponse) ContentType() string {
 	return ""
 }
 
+// QueryInformationResponse405Headers the declared response headers of an HTTP 405 response for QueryInformation
+type QueryInformationResponse405Headers struct {
+	Allow *string
+}
+
 type QueryInformationResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -785,8 +970,16 @@ type QueryInformationResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON405 the response for an HTTP 405 `application/json` response
+	JSON405 *Error
+	// JSON415 the response for an HTTP 415 `application/json` response
+	JSON415 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
+	// Headers405 the parsed response headers for an HTTP 405 response
+	Headers405 *QueryInformationResponse405Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -807,6 +1000,21 @@ func (r QueryInformationResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r QueryInformationResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r QueryInformationResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON405 returns the response for an HTTP 405 `application/json` response
+func (r QueryInformationResponse) GetJSON405() *Error {
+	return r.JSON405
+}
+
+// GetJSON415 returns the response for an HTTP 415 `application/json` response
+func (r QueryInformationResponse) GetJSON415() *Error {
+	return r.JSON415
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -937,6 +1145,27 @@ func ParseQueryInformationAuditResponse(rsp *http.Response) (*QueryInformationAu
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON415 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -944,6 +1173,19 @@ func ParseQueryInformationAuditResponse(rsp *http.Response) (*QueryInformationAu
 		}
 		response.JSON503 = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 405:
+		var headers QueryInformationAuditResponse405Headers
+		if values := rsp.Header.Values("Allow"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Allow", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Allow = &value
+		}
+		response.Headers405 = &headers
 	}
 
 	return response, nil
@@ -991,6 +1233,27 @@ func ParseQueryInformationResponse(rsp *http.Response) (*QueryInformationRespons
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON415 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -998,6 +1261,19 @@ func ParseQueryInformationResponse(rsp *http.Response) (*QueryInformationRespons
 		}
 		response.JSON503 = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 405:
+		var headers QueryInformationResponse405Headers
+		if values := rsp.Header.Values("Allow"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Allow", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Allow = &value
+		}
+		response.Headers405 = &headers
 	}
 
 	return response, nil
