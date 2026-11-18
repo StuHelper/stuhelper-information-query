@@ -157,9 +157,17 @@ func TestAuditIndependentAndUnavailableProvider(t *testing.T) {
 	if _, e := s.Audit(context.Background(), actor, "r", f); e != nil {
 		t.Fatal(e)
 	}
+	from := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	until := from.Add(-time.Second)
+	if _, e := s.Audit(context.Background(), actor, "r", iq.AuditFilter{Scope: scope, Purpose: "审计核查", Limit: 10, CreatedFrom: &from, CreatedUntil: &until}); !errors.Is(e, iq.ErrInvalid) {
+		t.Fatal("inverted time range accepted", e)
+	}
+	if _, e := s.Audit(context.Background(), actor, "r", iq.AuditFilter{Scope: scope, Purpose: "审计核查", Limit: 10, Target: "bad\nvalue"}); !errors.Is(e, iq.ErrInvalid) {
+		t.Fatal("control character in filter accepted", e)
+	}
 	s.Providers = nil
 	out, e := run(s, q)
-	if e != nil || len(out.UnavailableDomains) != 1 || len(r.records) != 3 {
+	if e != nil || len(out.UnavailableDomains) != 1 || len(r.records) != 5 {
 		t.Fatal(e)
 	}
 }

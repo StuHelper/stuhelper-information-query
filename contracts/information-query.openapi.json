@@ -475,7 +475,7 @@
             "minLength": 1,
             "maxLength": 512,
             "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
-            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed."
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters."
           },
           "after": {
             "type": "string",
@@ -486,6 +486,41 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional exact operator account key filter."
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional target account key matched against recorded audit targets."
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional audit action filter."
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional execution result filter."
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional delivery channel filter."
+          },
+          "created_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive lower bound on audit creation time."
+          },
+          "created_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive upper bound on audit creation time."
           }
         },
         "required": [

@@ -165,6 +165,60 @@ func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPag
 	if f.Scope.Module != "*" {
 		add("module = $%d", f.Scope.Module)
 	}
+	metadata := []string{}
+	addMetadata := func(expr string, value any) {
+		args = append(args, value)
+		metadata = append(metadata, fmt.Sprintf(expr, len(args)))
+	}
+	if f.Actor != "" {
+		addMetadata("body->>'actor' = $%d", f.Actor)
+	}
+	if f.Target != "" {
+		targetJSON, e := json.Marshal([]string{f.Target})
+		if e != nil {
+			return out, e
+		}
+		addMetadata("(body->'targets') @> $%d::jsonb", string(targetJSON))
+		if f.Scope != admin.Global {
+			// A target filter must have the same visibility as the returned target.
+			required := map[string]string{}
+			if f.Scope.School != "*" {
+				required["school"] = f.Scope.School
+			}
+			if f.Scope.Group != "*" {
+				required["group"] = f.Scope.Group
+			}
+			if f.Scope.Module != "*" {
+				required["module"] = f.Scope.Module
+			}
+			tuple, err := json.Marshal([]map[string]string{required})
+			if err != nil {
+				return out, err
+			}
+			args = append(args, f.Target, string(tuple))
+			metadata = append(metadata, fmt.Sprintf("COALESCE(NULLIF(a.target_scopes->($%d::text), '[]'::jsonb),jsonb_build_array(a.body->'scope')) @> $%d::jsonb", len(args)-1, len(args)))
+		}
+	}
+	if f.Action != "" {
+		addMetadata("body->>'action' = $%d", f.Action)
+	}
+	if f.Result == "denied" || f.Result == "forbidden" {
+		metadata = append(metadata, "body->>'result' IN ('denied','forbidden')")
+	} else if f.Result != "" {
+		addMetadata("body->>'result' = $%d", f.Result)
+	}
+	if f.Channel != "" {
+		addMetadata("body->>'channel' = $%d", f.Channel)
+	}
+	if f.CreatedFrom != nil {
+		addMetadata("created_at >= $%d", f.CreatedFrom.UTC())
+	}
+	if f.CreatedUntil != nil {
+		addMetadata("created_at <= $%d", f.CreatedUntil.UTC())
+	}
+	if len(metadata) > 0 {
+		conds = append(conds, "id IN (SELECT a.id FROM information_query.audit a WHERE "+strings.Join(metadata, " AND ")+")")
+	}
 	args = append(args, f.Limit+1)
 	limit := fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", len(args))
 	where := ""

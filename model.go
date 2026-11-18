@@ -85,10 +85,17 @@ type Audit struct {
 	TargetScopes map[string][]admin.Scope `json:"-"`
 }
 type AuditFilter struct {
-	Scope   admin.Scope `json:"scope"`
-	Purpose string      `json:"purpose"`
-	After   string      `json:"after"`
-	Limit   int         `json:"limit"`
+	Scope        admin.Scope `json:"scope"`
+	Purpose      string      `json:"purpose"`
+	After        string      `json:"after"`
+	Limit        int         `json:"limit"`
+	Actor        string      `json:"actor,omitempty"`
+	Target       string      `json:"target,omitempty"`
+	Action       string      `json:"action,omitempty"`
+	Result       string      `json:"result,omitempty"`
+	Channel      string      `json:"channel,omitempty"`
+	CreatedFrom  *time.Time  `json:"created_from,omitempty"`
+	CreatedUntil *time.Time  `json:"created_until,omitempty"`
 }
 type AuditPage struct {
 	Items      []Audit `json:"items"`

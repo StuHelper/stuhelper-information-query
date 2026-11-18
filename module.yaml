@@ -51,6 +51,7 @@ scenario_tests:
     - postgres/repository_test.go#TestAuditDescendingPaginationTerminatesUnderSelfAudit
     - postgres/repository_test.go#TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate
     - postgres/repository_test.go#TestMalformedInputAuditSanitizationAndNonNullSlices
+    - postgres/repository_test.go#TestAuditNewestFirstPaginationAndMultidimensionalFilters
   IQ-07:
     - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit
     - postgres/repository_test.go#TestNilPoolReturnsUnavailable

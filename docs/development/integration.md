@@ -79,6 +79,8 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 
 AuditFilter.purpose 记录管理员本次查阅审计日志的事由并写入对应的 audit.query 审计行，不作为历史审计记录的 SQL 过滤条件。审计读取仅按 Scope、游标与分页参数执行。
 
+审计查询默认按 ID 倒序返回最新记录，after 为排他上界游标。purpose 记录本次查阅审计的事由，不参与 SQL 筛选；支持按 actor、target、action、result、channel 与时间段过滤。
+
 ## 审计保留与维护
 
 postgres.Maintenance 使用单独连接池，仅授予 schema USAGE 和 audit SELECT/DELETE。维护身份不能 INSERT/UPDATE，运行身份不能 DELETE/UPDATE。维护接口不挂载 HTTP，也不放入运行 Repository 接口。

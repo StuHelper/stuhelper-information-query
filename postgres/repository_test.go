@@ -513,6 +513,16 @@ func TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction(t *testing.T
 		t.Fatalf("billing module auditor missed multi-domain query: %+v err=%v", billingPage, err)
 	}
 
+	// Applying a hidden target as a filter must not reveal even the matching audit's existence.
+	hidden, err := r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: schoolA, Group: "*", Module: "billing"}, Target: acctB, Limit: 10})
+	if err != nil || len(hidden.Items) != 0 {
+		t.Fatalf("hidden target matched: %d, %v", len(hidden.Items), err)
+	}
+	visible, err := r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: schoolA, Group: "*", Module: "billing"}, Target: acctA, Limit: 10})
+	if err != nil || len(visible.Items) != 1 || len(visible.Items[0].Targets) != 1 || visible.Items[0].Targets[0] != acctA {
+		t.Fatalf("visible target mismatch: %+v %v", visible, err)
+	}
+
 	// Restrictions have to match one observed scope.
 	mixed, err := r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: schoolA, Group: groupB, Module: "billing"}, Limit: 10})
 	if err != nil || len(mixed.Items) != 0 {
@@ -973,5 +983,90 @@ func TestPruneSeesHoldCommittedWhileWaiting(t *testing.T) {
 	var kept int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE body->>'request_id'=$1`, request).Scan(&kept); err != nil || kept != 1 {
 		t.Fatalf("protected audit rows = %d, err = %v", kept, err)
+	}
+}
+
+func TestAuditNewestFirstPaginationAndMultidimensionalFilters(t *testing.T) {
+	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
+	if dsn == "" {
+		t.Skip("isolated PostgreSQL DSN required")
+	}
+	ctx := context.Background()
+	pool, e := pgxpool.New(ctx, dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer pool.Close()
+	r := postgres.Repository{Pool: pool}
+	if e = r.Migrate(ctx); e != nil {
+		t.Fatal(e)
+	}
+	testScope := admin.Scope{School: "filter-school", Group: "filter-group", Module: "profiles"}
+	base := time.Date(2026, 11, 18, 1, 0, 0, 0, time.UTC)
+	entries := []iq.Audit{
+		{Actor: "issuer:admin-1", RequestID: "req-1", Purpose: "工单核查-1", Scope: testScope, Channel: "admin", Action: "query", Result: "success", Count: 1, Targets: []string{"issuer:student-a", "issuer:student-b"}, Fields: []string{"identity"}, Basis: []string{"information-query.profiles.read"}, CreatedAt: base},
+		{Actor: "issuer:admin-2", RequestID: "req-2", Purpose: "群聊核查-2", Scope: testScope, Channel: "bot_group", TargetGroup: "filter-group", Action: "query", Result: "forbidden", Count: 0, Targets: []string{"issuer:student-c"}, Fields: []string{}, Basis: []string{}, CreatedAt: base.Add(time.Minute)},
+		{Actor: "issuer:admin-1", RequestID: "req-3", Purpose: "申诉复查-3", Scope: testScope, Channel: "admin", Action: "query", Result: "success", Count: 2, Targets: []string{"issuer:student-b"}, Fields: []string{"document"}, Basis: []string{"information-query.document.read"}, CreatedAt: base.Add(2 * time.Minute)},
+	}
+	for _, entry := range entries {
+		if e = r.Append(ctx, entry); e != nil {
+			t.Fatal(e)
+		}
+	}
+	svc := iq.Service{Auth: allow{}, Repo: r, Now: func() time.Time { return base.Add(5 * time.Minute) }}
+	// Verify newest-first order and termination under limit=1 despite synchronous audit.query appends.
+	seen := []string{}
+	after := ""
+	for step := 0; step < 10; step++ {
+		page, err := svc.Audit(ctx, account.Principal{Issuer: "issuer", Subject: "auditor"}, "audit-req", iq.AuditFilter{
+			Scope:   testScope,
+			Purpose: "本次查阅事由不参与过滤",
+			After:   after,
+			Limit:   1,
+			Action:  "query",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range page.Items {
+			seen = append(seen, item.RequestID)
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		after = page.NextCursor
+		if step == 9 {
+			t.Fatal("newest-first pagination did not terminate")
+		}
+	}
+	if len(seen) != 3 || seen[0] != "req-3" || seen[1] != "req-2" || seen[2] != "req-1" {
+		t.Fatalf("expected newest-first [req-3 req-2 req-1], got %v", seen)
+	}
+	from := base.Add(30 * time.Second)
+	until := base.Add(2 * time.Minute)
+	filtered, err := svc.Audit(ctx, account.Principal{Issuer: "issuer", Subject: "auditor"}, "audit-filter", iq.AuditFilter{
+		Scope:        admin.Scope{School: "filter-school", Group: "*", Module: "*"},
+		Purpose:      "核查学生B谁查过",
+		Limit:        20,
+		Actor:        "issuer:admin-1",
+		Target:       "issuer:student-b",
+		Action:       "query",
+		Result:       "success",
+		Channel:      "admin",
+		CreatedFrom:  &from,
+		CreatedUntil: &until,
+	})
+	if err != nil || len(filtered.Items) != 1 || filtered.Items[0].RequestID != "req-3" {
+		t.Fatalf("unexpected multidimensional filter result: %+v %v", filtered, err)
+	}
+	denied, err := svc.Audit(ctx, account.Principal{Issuer: "issuer", Subject: "auditor"}, "audit-denied", iq.AuditFilter{
+		Scope:   testScope,
+		Purpose: "核查拒绝记录",
+		Limit:   20,
+		Result:  "forbidden",
+		Channel: "bot_group",
+	})
+	if err != nil || len(denied.Items) != 1 || denied.Items[0].RequestID != "req-2" {
+		t.Fatalf("unexpected result/channel filter: %+v %v", denied, err)
 	}
 }
