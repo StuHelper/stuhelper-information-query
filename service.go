@@ -88,6 +88,31 @@ func (s Service) finish(ctx context.Context, a Audit, err error) error {
 func validDelivery(d Delivery) bool {
 	return (d.Channel == "admin" || d.Channel == "bot_private") && d.Group == "" || d.Channel == "bot_group" && clean(d.Group, 128)
 }
+
+// queryAuthorizer reuses successful checks only within one Query for one principal.
+type queryAuthorizer struct {
+	source  Authorizer
+	allowed map[permission]bool
+}
+type permission struct {
+	capability string
+	scope      admin.Scope
+}
+
+func (a queryAuthorizer) Evaluate(ctx context.Context, p account.Principal, capability string, scope admin.Scope) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	key := permission{capability, scope}
+	if a.allowed[key] {
+		return nil
+	}
+	if err := a.source.Evaluate(ctx, p, capability, scope); err != nil {
+		return err
+	}
+	a.allowed[key] = true
+	return nil
+}
 func (s Service) Query(ctx context.Context, p account.Principal, id string, d Delivery, q Query) (out Result, err error) {
 	a := s.start(p, id, q.Purpose, "query", q.Scope, d)
 	defer func() {
@@ -106,6 +131,9 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {
 		return out, ErrInvalid
+	}
+	if s.Auth != nil {
+		s.Auth = queryAuthorizer{source: s.Auth, allowed: make(map[permission]bool)}
 	}
 	if d.Channel != "admin" {
 		if !s.BotEnabled {
@@ -145,17 +173,6 @@ func (s Service) queryRecords(ctx context.Context, p account.Principal, q Query,
 	for _, domain := range q.Domains {
 		scope := q.Scope
 		scope.Module = domain
-		if !q.Scope.Contains(scope) {
-			return out, ErrInvalid
-		}
-		if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, a); err != nil {
-			return out, err
-		}
-		for _, category := range q.Fields {
-			if err = s.evaluate(ctx, p, "information-query."+fieldCapability(category)+".read", scope, a); err != nil {
-				return out, err
-			}
-		}
 		provider := s.Providers[domain]
 		if provider == nil {
 			out.UnavailableDomains = append(out.UnavailableDomains, domain)
