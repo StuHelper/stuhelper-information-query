@@ -30,28 +30,58 @@ scenario_tests:
   IQ-01:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-02:
+    - authorization_test.go#TestAuthorizationReuseEndsAtRequestBoundary
     - service_test.go#TestScopeAndDomainIsolation
+    - postgres/repository_test.go#TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction
   IQ-03:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-04:
     - resolver_test.go#TestResolverFailureAndIsolation
     - service_test.go#TestScopeAndDomainIsolation
+    - httpapi/handler_test.go#TestStructuredErrorReasonsAndNoSecretEcho
+    - service_test.go#TestOperatorCapabilitiesPreflight
+    - httpapi/handler_test.go#TestCapabilitiesEndpointSDKIntegration
+    - httpapi/handler_test.go#TestMalformedCapabilitiesBypassAudit
   IQ-05:
+    - httpapi/request_test.go#TestRequestBoundariesAndRejectionAudit
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
+    - account_query_test.go#TestQueryRequiresCanonicalAccount
     - service_test.go#TestSensitiveMaskAuditAndFailure
+    - service_test.go#TestUnicodeMultilinePurposeAndControlChars
+    - service_test.go#TestAuditFieldsExcludeMaskedAndBusinessAndDeniedResult
+    - httpapi/handler_test.go#TestHTTPEndpointsStatusCodesAndOpenAPIContract
     - preview_test.go#TestBoundedBatchPreviewAuthorizationMaskingAndAudit
     - httpapi/handler_test.go#TestBatchPreviewHTTPRejectsSensitiveFieldsAndSupportsSDK
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
+    - postgres/repository_test.go#TestAuditDescendingPaginationTerminatesUnderSelfAudit
+    - postgres/repository_test.go#TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate
+    - postgres/repository_test.go#TestMalformedInputAuditSanitizationAndNonNullSlices
+    - postgres/repository_test.go#TestAuditNewestFirstPaginationAndMultidimensionalFilters
   IQ-07:
     - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit
+    - postgres/repository_test.go#TestNilPoolReturnsUnavailable
     - service_test.go#TestSensitiveMaskAuditAndFailure
   IQ-08:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-09:
     - resolver_test.go#TestResolverFailureAndIsolation
+    - service_test.go#TestSanitizedObserveHookStagesAndZeroLeak
   IQ-10:
+    - cursor_test.go#TestCursorAuthenticityAndEquivalentSelections
+    - cursor_test.go#TestConfiguredCursorKeyAcrossReplicas
+    - cursor_test.go#TestResolverPositionValidatedBeforeContinuation
+    - candidate_page_test.go#TestContinuationKeepsGroupIdentityAndSkipsExhaustedTarget
+    - candidate_page_test.go#TestExhaustedGroupAdvancesToNextCandidate
+    - domain_page_test.go#TestOrderedDomainBudgetAndLocalCursor
+    - domain_page_test.go#TestPageBudgetCountsDisclosedFieldText
+    - domain_page_test.go#TestSparseDomainPagesUseActualRecords
     - resolver_test.go#TestCompositePagination
     - resolver_test.go#TestCandidateChangeAndWorkBound
+    - resolver_test.go#TestCandidateGroupHasMoreFlag
   IQ-11:
     - postgres/repository_test.go#TestBoundedPruneAndMaintenancePrivileges
+    - postgres/repository_test.go#TestTransactionalVersionedMigrationsAndRollback
+    - postgres/repository_test.go#TestAuditLegalHoldExclusionReleaseAndRoleIsolation
+    - postgres/repository_test.go#TestPruneSeesHoldCommittedWhileWaiting
+    - postgres/repository_test.go#TestPendingStatsBoundedBacklogAndOldestTimestamp

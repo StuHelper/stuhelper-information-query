@@ -31,6 +31,7 @@ func (r batchResolver) Resolve(_ context.Context, _ account.Principal, l iq.Lead
 }
 
 type countProvider struct {
+	valueSize     int
 	domain        string
 	countByTarget map[string]int
 	sawFields     bool
@@ -52,7 +53,7 @@ func (p *countProvider) Query(_ context.Context, _ account.Principal, q iq.Query
 			Current:   i%2 == 1,
 			ChangedAt: time.Unix(200, 0),
 			Fields: []iq.Field{
-				{Name: "secret_doc", Category: "document", Value: "SENSITIVE-DOC-9999", Masked: false},
+				{Name: "secret_doc", Category: "document", Value: "SENSITIVE-DOC-9999" + strings.Repeat("x", p.valueSize), Masked: false},
 			},
 		})
 	}
@@ -71,7 +72,7 @@ func TestBoundedBatchPreviewAuthorizationMaskingAndAudit(t *testing.T) {
 	manyHomonyms := make([]iq.Candidate, 0, 7)
 	for i := 1; i <= 7; i++ {
 		manyHomonyms = append(manyHomonyms, iq.Candidate{
-			Account:   fmt.Sprintf("issuer:homonym-%d", i),
+			Account:   (account.Principal{Issuer: "issuer", Subject: fmt.Sprintf("homonym-%d", i)}).Key(),
 			Source:    "qq-binding",
 			Current:   i == 1,
 			ChangedAt: time.Unix(100, 0),
@@ -83,7 +84,7 @@ func TestBoundedBatchPreviewAuthorizationMaskingAndAudit(t *testing.T) {
 		"RAW-QQ-10001": manyHomonyms,
 		"RAW-QQ-10002": {},
 	}}
-	profProv := &countProvider{domain: "profiles", countByTarget: map[string]int{"issuer:homonym-1": 25, "issuer:homonym-2": 2}}
+	profProv := &countProvider{domain: "profiles", countByTarget: map[string]int{(account.Principal{Issuer: "issuer", Subject: "homonym-1"}).Key(): 25, (account.Principal{Issuer: "issuer", Subject: "homonym-2"}).Key(): 2}}
 	svc := &iq.Service{
 		Auth:      a,
 		Repo:      r,
@@ -168,6 +169,13 @@ func TestBoundedBatchPreviewAuthorizationMaskingAndAudit(t *testing.T) {
 		t.Fatalf("unexpected batch audit record: %+v", lastAudit)
 	}
 
+	// Oversized provider fields are counted even when the preview requested no fields.
+	profProv.valueSize = 60 * 1024
+	rejected, e := svc.Preview(context.Background(), actor, "batch-payload", iq.Delivery{Channel: "admin"}, bq)
+	if !errors.Is(e, iq.ErrUnavailable) || len(rejected.Entries) != 0 || len(r.records[len(r.records)-1].Targets) != 0 {
+		t.Fatalf("oversized preview: entries=%d err=%v", len(rejected.Entries), e)
+	}
+	profProv.valueSize = 0
 	// Audit commit failure suppresses the entire batch preview response.
 	r.fail = true
 	failedOut, err := svc.Preview(context.Background(), actor, "batch-audit-fail", iq.Delivery{Channel: "admin"}, bq)

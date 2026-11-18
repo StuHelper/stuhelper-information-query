@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	iq "github.com/StuHelper/stuhelper-information-query"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"time"
 )
@@ -15,28 +16,98 @@ type Maintenance struct {
 	Now             func() time.Time
 }
 
-func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int) (int, error) {
+// The pruning statement needs a new snapshot after any earlier hold commits.
+func beginRetention(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return nil, err
+	}
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('information_query.audit_retention',0))`); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	return tx, nil
+}
+
+const maxPendingStatsSample = 10001
+
+func (m Maintenance) validateCutoff(before time.Time) error {
 	months := m.RetentionMonths
 	if months == 0 {
 		months = 12
 	}
-	if months < 1 || months > 1200 || limit < 1 || limit > 1000 || before.IsZero() {
-		return 0, iq.ErrInvalid
+	if months < 1 || months > 1200 || before.IsZero() {
+		return iq.ErrInvalid
 	}
 	now := time.Now().UTC()
 	if m.Now != nil {
 		now = m.Now().UTC()
 	}
 	if before.After(now.AddDate(0, -months, 0)) {
+		return iq.ErrInvalid
+	}
+	return nil
+}
+
+func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int) (int, error) {
+	if m.Pool == nil {
+		return 0, iq.ErrUnavailable
+	}
+	if limit < 1 || limit > 1000 {
 		return 0, iq.ErrInvalid
+	}
+	if err := m.validateCutoff(before); err != nil {
+		return 0, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	result, err := m.Pool.Exec(ctx, `WITH expired AS (
- SELECT id FROM information_query.audit WHERE created_at < $1 ORDER BY created_at,id LIMIT $2
+	tx, err := beginRetention(ctx, m.Pool)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `WITH expired AS (
+ SELECT a.id FROM information_query.audit a
+ WHERE a.created_at < $1
+   AND NOT information_query.audit_is_held(
+    a.id,
+    COALESCE(a.body->>'request_id',''),
+    CASE WHEN jsonb_typeof(a.body->'targets')='array' THEN a.body->'targets' ELSE '[]'::jsonb END
+   )
+ ORDER BY a.created_at,a.id LIMIT $2
  ) DELETE FROM information_query.audit a USING expired e WHERE a.id=e.id`, before, limit)
 	if err != nil {
 		return 0, err
 	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, err
+	}
 	return int(result.RowsAffected()), nil
+}
+
+// PendingStats inspects the oldest unpruned audit timestamp and a bounded expired backlog
+// count (capped at 10001) using only the maintenance role's read-only SELECT privilege.
+func (m Maintenance) PendingStats(ctx context.Context, before time.Time) (oldest time.Time, hasExpired bool, boundedCount int, err error) {
+	if m.Pool == nil {
+		return time.Time{}, false, 0, iq.ErrUnavailable
+	}
+	if err = m.validateCutoff(before); err != nil {
+		return time.Time{}, false, 0, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var minAt *time.Time
+	var count int
+	err = m.Pool.QueryRow(ctx, `WITH bounded AS (
+ SELECT created_at FROM information_query.audit a WHERE created_at < $1 AND NOT information_query.audit_is_held(
+    a.id,COALESCE(a.body->>'request_id',''),CASE WHEN jsonb_typeof(a.body->'targets')='array' THEN a.body->'targets' ELSE '[]'::jsonb END
+ ) ORDER BY created_at,id LIMIT $2
+ ) SELECT count(*), min(created_at) FROM bounded`, before, maxPendingStatsSample).Scan(&count, &minAt)
+	if err != nil {
+		return time.Time{}, false, 0, err
+	}
+	if count == 0 || minAt == nil {
+		return time.Time{}, false, 0, nil
+	}
+	return minAt.UTC(), true, count, nil
 }

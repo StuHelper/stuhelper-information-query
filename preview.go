@@ -24,6 +24,12 @@ const (
 func (s Service) Preview(ctx context.Context, p account.Principal, id string, d Delivery, q BatchQuery) (out BatchPreviewResult, err error) {
 	a := s.start(p, id, q.Purpose, "batch.preview", q.Scope, d)
 	defer func() {
+		if err != nil {
+			a.Targets = nil
+			a.TargetScopes = nil
+			a.Scopes = nil
+			a.Count = 0
+		}
 		err = s.finish(ctx, a, err)
 		if err != nil {
 			out = BatchPreviewResult{}
@@ -34,10 +40,10 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(q.Purpose, 512) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !cleanText(q.Purpose, 512) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !slices.Contains(kinds, q.Kind) {
 		return out, ErrInvalid
 	}
-	if q.Kind == "student_id" && q.Scope.School == "*" {
+	if (q.Kind == "student_id" || q.Kind == "staff_id") && q.Scope.School == "*" {
 		return out, ErrInvalid
 	}
 	if len(q.Values) < 1 || len(q.Values) > maxBatchLeads {
@@ -45,7 +51,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 	}
 	seenValues := make(map[string]bool, len(q.Values))
 	for _, v := range q.Values {
-		if !clean(v, 256) || seenValues[v] {
+		if !validQueryValue(q.Kind, v) || seenValues[v] {
 			return out, ErrInvalid
 		}
 		seenValues[v] = true
@@ -54,7 +60,10 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 	if d.Channel != "admin" {
 		return out, ErrForbidden
 	}
-	if err = s.evaluate(ctx, p, "information-query.batch.read", q.Scope, &a); err != nil {
+	if s.Auth != nil {
+		s.Auth = queryAuthorizer{source: s.Auth, allowed: make(map[permission]bool)}
+	}
+	if err = s.evaluate(ctx, p, "information-query.batch.read", q.Scope, &a, "domain_forbidden", "", ""); err != nil {
 		return out, err
 	}
 	out = BatchPreviewResult{
@@ -70,7 +79,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 		if !q.Scope.Contains(domainScope) {
 			return BatchPreviewResult{}, ErrInvalid
 		}
-		if err = s.evaluate(ctx, p, "information-query."+domain+".read", domainScope, &a); err != nil {
+		if err = s.evaluate(ctx, p, "information-query."+domain+".read", domainScope, &a, "domain_forbidden", domain, ""); err != nil {
 			return BatchPreviewResult{}, err
 		}
 		if s.Providers[domain] == nil {
@@ -126,7 +135,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 				}
 				return BatchPreviewResult{}, ErrUnavailable
 			}
-			if len(resolved) > limit || len(next) > 1024 || (next != "" && len(resolved) == 0) {
+			if len(resolved) > limit || (next != "" && !clean(next, 1024)) || (next != "" && len(resolved) == 0) {
 				return BatchPreviewResult{}, ErrUnavailable
 			}
 			maxKeep := min(maxBatchCandidatesPerLead, maxBatchTotalCandidates-totalCandidates)
@@ -140,7 +149,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 				hasMoreLead = true
 			}
 			for _, candidate := range resolved {
-				if !clean(candidate.Account, 256) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
+				if !validQueryValue("account", candidate.Account) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
 					return BatchPreviewResult{}, ErrUnavailable
 				}
 				for _, f := range candidate.Label {
@@ -158,7 +167,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 				for _, domain := range q.Domains {
 					scope := candidate.Scope
 					scope.Module = domain
-					if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, &a); err != nil {
+					if err = s.evaluate(ctx, p, "information-query."+domain+".read", scope, &a, "domain_forbidden", domain, ""); err != nil {
 						return BatchPreviewResult{}, err
 					}
 				}
@@ -169,6 +178,8 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 		out.Entries[idx].HasMoreCandidates = hasMoreLead
 		for _, candidate := range candidates {
 			totalCandidates++
+			addTargetScope(a.TargetScopes, candidate.Account, candidate.Scope)
+			addScope(&a.Scopes, candidate.Scope)
 			if !slices.Contains(a.Targets, candidate.Account) {
 				a.Targets = append(a.Targets, candidate.Account)
 			}
@@ -236,14 +247,16 @@ func (s Service) summarizeCandidateDomains(ctx context.Context, p account.Princi
 				return nil, used, false, ErrUnavailable
 			}
 			previous = r.ID
-			if e = s.evaluate(ctx, p, "information-query."+domain+".read", r.Scope, a); e != nil {
+			addTargetScope(a.TargetScopes, accountKey, r.Scope)
+			addScope(&a.Scopes, r.Scope)
+			if e = s.evaluate(ctx, p, "information-query."+domain+".read", r.Scope, a, "domain_forbidden", domain, ""); e != nil {
 				return nil, used, false, e
 			}
 			for _, f := range r.Fields {
 				if !clean(f.Name, 128) || len(f.Value) > 65536 || (f.Category != "business" && !slices.Contains(categories, f.Category)) {
 					return nil, used, false, ErrUnavailable
 				}
-				*payloadBytes += len(f.Name)
+				*payloadBytes += len(f.Name) + len(f.Value)
 				if *payloadBytes > maxBatchPayloadBytes {
 					return nil, used, false, ErrUnavailable
 				}

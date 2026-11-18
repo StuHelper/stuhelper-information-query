@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/information-query/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope. */
+        post: operations["queryInformationCapabilities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/information-query/preview": {
         parameters: {
             query?: never;
@@ -65,17 +82,22 @@ export interface components {
             module: string;
         };
         Query: {
-            /** @enum {string} */
-            kind: "name" | "student_id" | "qq" | "account";
+            /**
+             * @description Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
+             * @enum {string}
+             */
+            kind: "name" | "student_id" | "staff_id" | "qq" | "account";
+            /** @description Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points. */
             value: string;
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
             /** @description Sensitive categories explicitly requested; omitted means masked identity fields only. */
             fields?: ("identity" | "document" | "material" | "refund_payee")[];
+            /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. */
             purpose: string;
             /** @description Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page. */
             limit: number;
-            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation. */
+            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant. */
             after?: string;
         };
         Field: {
@@ -103,12 +125,49 @@ export interface components {
         };
         Error: {
             code: string;
+            /**
+             * @description Machine-readable failure cause for localized recovery guidance.
+             * @enum {string}
+             */
+            reason?: "invalid_parameter" | "invalid_scope" | "school_required" | "invalid_account_key" | "cursor_mismatch" | "candidate_changed" | "payload_too_large" | "bot_disabled" | "bot_forbidden" | "channel_forbidden" | "domain_forbidden" | "field_forbidden" | "audit_forbidden" | "unauthenticated" | "auth_unavailable" | "resolver_unavailable" | "provider_unavailable" | "audit_unavailable";
+            /**
+             * @description Affected business domain when a domain check or provider failed; never echoes query values.
+             * @enum {string}
+             */
+            domain?: "profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups";
+            /**
+             * @description Affected sensitive field category when field authorization failed; never echoes query values.
+             * @enum {string}
+             */
+            field?: "identity" | "document" | "material" | "refund_payee";
         };
         AuditFilter: {
             scope: components["schemas"]["Scope"];
+            /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters. */
             purpose: string;
-            after: string;
+            /** @description Omitted or empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page. */
+            after?: string;
             limit: number;
+            /** @description Optional exact operator account key filter. */
+            actor?: string;
+            /** @description Optional target account key matched against recorded audit targets. */
+            target?: string;
+            /** @description Optional audit action filter. */
+            action?: string;
+            /** @description Optional execution result filter. */
+            result?: string;
+            /** @description Optional delivery channel filter. */
+            channel?: string;
+            /**
+             * Format: date-time
+             * @description Optional inclusive lower bound on audit creation time.
+             */
+            created_from?: string;
+            /**
+             * Format: date-time
+             * @description Optional inclusive upper bound on audit creation time.
+             */
+            created_until?: string;
         };
         Audit: {
             id: string;
@@ -116,13 +175,16 @@ export interface components {
             request_id: string;
             purpose: string;
             scope: components["schemas"]["Scope"];
-            channel: string;
+            /** @enum {string} */
+            channel: "admin" | "bot_private" | "bot_group" | "unknown";
             target_group: string;
-            action: string;
-            result: string;
+            /** @enum {string} */
+            action: "query" | "query.rejected" | "audit.query" | "audit.rejected" | "provider.query" | "unknown";
+            /** @enum {string} */
+            result: "success" | "denied" | "invalid_request" | "unauthenticated" | "unavailable" | "unknown";
             count: number;
             targets: string[];
-            fields: string[];
+            fields: ("identity" | "document" | "material" | "refund_payee")[];
             basis: string[];
             /** Format: date-time */
             created_at: string;
@@ -135,19 +197,42 @@ export interface components {
             account: string;
             source: string;
             current: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time.
+             */
             changed_at: string;
             scope: components["schemas"]["Scope"];
-            /** @description Masked distinguishing fields only. */
+            /** @description Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms. */
             label: components["schemas"]["Field"][];
         };
         CandidateGroup: {
             candidate: components["schemas"]["Candidate"];
             items: components["schemas"]["Record"][];
+            /** @description True when this candidate has unreturned domain records continuing onto a subsequent page. */
+            has_more: boolean;
+        };
+        CapabilitiesRequest: {
+            scope?: components["schemas"]["Scope"];
+        };
+        Capabilities: {
+            scope: components["schemas"]["Scope"];
+            /** @description Domains authorized for the current principal within the evaluated scope. */
+            allowed_domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
+            /** @description Sensitive field categories authorized for the current principal across the evaluated scope. */
+            allowed_fields: ("identity" | "document" | "material" | "refund_payee")[];
+            /** @description Domains with registered providers on the current host. */
+            available_domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
+            /** @description Query lead kinds currently supported on the host. */
+            available_kinds: ("name" | "student_id" | "qq" | "account" | "staff_id")[];
+            /** @description Whether the current principal may read audit logs in the evaluated scope on the current channel. */
+            audit_readable: boolean;
+            /** @description Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope. */
+            bot_enabled: boolean;
         };
         BatchPreviewRequest: {
             /** @enum {string} */
-            kind: "name" | "student_id" | "qq" | "account";
+            kind: "name" | "student_id" | "qq" | "account" | "staff_id";
             /** @description Up to 20 unique leads of the same kind; raw values are never echoed or logged. */
             values: string[];
             scope: components["schemas"]["Scope"];
@@ -239,6 +324,34 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unknown route */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    Allow?: "POST";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expected application/json */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Dependency or audit unavailable */
             503: {
                 headers: {
@@ -299,7 +412,95 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unknown route */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    Allow?: "POST";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expected application/json */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Dependency or audit unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    queryInformationCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapabilitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Dependency unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;
