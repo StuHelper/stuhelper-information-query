@@ -3,21 +3,23 @@ package informationquery
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/StuHelper/stuhelper-platform/account"
 )
 
 type continuation struct {
-	Binding   string `json:"b"`
-	Lead      string `json:"l"`
-	Record    string `json:"r"`
-	Candidate string `json:"c"`
+	StartedAt *time.Time `json:"t,omitempty"`
+	Binding   string     `json:"b"`
+	Lead      string     `json:"l"`
+	Record    string     `json:"r"`
+	Candidate string     `json:"c"`
 }
 
 func fingerprint(v any) string {
@@ -44,19 +46,30 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 	}
 	originalAfter := q.After
 	q.After = ""
+	q.Domains = slices.Sorted(slices.Values(q.Domains))
+	q.Fields = slices.Sorted(slices.Values(q.Fields))
 	binding := fingerprint(struct {
 		Query Query
 		Actor string
 	}{q, p.Key()})
 	cursor := continuation{Binding: binding}
 	if originalAfter != "" {
-		b, e := base64.RawURLEncoding.DecodeString(originalAfter)
-		if e != nil || json.Unmarshal(b, &cursor) != nil || cursor.Binding != binding || len(cursor.Lead) > 1024 || len(cursor.Record) > 256 {
+		var ok bool
+		cursor, ok = s.parseContinuation(originalAfter)
+		if !ok || cursor.Binding != binding || !cursor.valid(q) {
 			return out, ErrInvalid
 		}
 	}
-	budget, remaining, payload := 700, q.Limit, 0
-	for len(out.Groups) < 50 && remaining > 0 && budget >= len(q.Domains) {
+	if q.Kind == "account" {
+		if originalAfter == "" {
+			cursor.StartedAt = &a.CreatedAt
+		}
+		if cursor.StartedAt == nil || cursor.StartedAt.IsZero() {
+			return out, ErrInvalid
+		}
+	}
+	remaining, payload := q.Limit, 0
+	for examined := 0; examined < 50 && remaining > 0; examined++ {
 		if ctx.Err() != nil {
 			s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "timeout"})
 			return out, ErrUnavailable
@@ -64,7 +77,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		var candidate Candidate
 		next := ""
 		if q.Kind == "account" {
-			candidate = Candidate{Account: q.Value, Source: "account", Current: true, ChangedAt: a.CreatedAt, Scope: q.Scope, Label: []Field{}}
+			candidate = Candidate{Account: q.Value, Source: "account", Current: true, ChangedAt: *cursor.StartedAt, Scope: q.Scope, Label: []Field{}}
 		} else {
 			resolver := s.Resolvers[q.Kind]
 			if resolver == nil {
@@ -86,7 +99,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 				s.observe(Event{RequestID: a.RequestID, Stage: StageResolve, Kind: q.Kind, Code: "resolver_error", Duration: resolveDuration})
 				return out, ErrUnavailable
 			}
-			if len(candidates) > 1 || len(n) > 1024 || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
+			if len(candidates) > 1 || (n != "" && !clean(n, 1024)) || (n != "" && (n == cursor.Lead || len(candidates) == 0)) {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_resolver_page", Duration: resolveDuration})
 				return out, ErrUnavailable
 			}
@@ -99,7 +112,7 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 				return out, nil
 			}
 			candidate, next = candidates[0], n
-			if !clean(candidate.Account, 256) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
+			if !validQueryValue("account", candidate.Account) || !clean(candidate.Source, 128) || candidate.ChangedAt.IsZero() || !candidate.Scope.Valid() || !q.Scope.Contains(candidate.Scope) || len(candidate.Label) > 10 {
 				s.observe(Event{RequestID: a.RequestID, Stage: StageContract, Kind: q.Kind, Code: "invalid_candidate", Duration: resolveDuration})
 				return out, ErrUnavailable
 			}
@@ -145,13 +158,14 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 		pq.Kind = "account"
 		pq.Value = candidate.Account
 		pq.After = cursor.Record
-		pq.Limit = min(remaining, budget/len(q.Domains))
-		budget -= pq.Limit * len(q.Domains)
+		pq.Limit = remaining
 		page, e := s.queryRecords(ctx, p, pq, a, &payload)
 		if e != nil {
 			return out, e
 		}
-		out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items})
+		if cursor.Record == "" || len(page.Items) > 0 {
+			out.Groups = append(out.Groups, CandidateGroup{Candidate: candidate, Items: page.Items})
+		}
 		remaining -= len(page.Items)
 		if page.NextCursor != "" {
 			cursor.Record = page.NextCursor
@@ -169,7 +183,21 @@ func (s Service) resolveQuery(ctx context.Context, p account.Principal, q Query,
 			break
 		}
 	}
-	b, _ := json.Marshal(cursor)
-	out.NextCursor = base64.RawURLEncoding.EncodeToString(b)
+	out.NextCursor = s.encodeContinuation(cursor)
+	if len(out.NextCursor) > 4096 {
+		return out, ErrUnavailable
+	}
 	return out, nil
+}
+
+func (c continuation) valid(q Query) bool {
+	if c.Lead != "" && (q.Kind == "account" || !clean(c.Lead, 1024)) {
+		return false
+	}
+	if c.Record == "" {
+		return c.Candidate == "" && c.Lead != ""
+	}
+	digest, err := hex.DecodeString(c.Candidate)
+	domain, _, ok := strings.Cut(c.Record, ":")
+	return err == nil && len(digest) == sha256.Size && clean(c.Record, 256) && ok && slices.Contains(q.Domains, domain)
 }

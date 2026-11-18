@@ -67,26 +67,35 @@ type Provider interface {
 	Query(context.Context, account.Principal, Query) ([]Record, error)
 }
 type Audit struct {
-	ID          string      `json:"id"`
-	Actor       string      `json:"actor"`
-	RequestID   string      `json:"request_id"`
-	Purpose     string      `json:"purpose"`
-	Scope       admin.Scope `json:"scope"`
-	Channel     string      `json:"channel"`
-	TargetGroup string      `json:"target_group"`
-	Action      string      `json:"action"`
-	Result      string      `json:"result"`
-	Count       int         `json:"count"`
-	Targets     []string    `json:"targets"`
-	Fields      []string    `json:"fields"`
-	Basis       []string    `json:"basis"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID           string                   `json:"id"`
+	Actor        string                   `json:"actor"`
+	RequestID    string                   `json:"request_id"`
+	Purpose      string                   `json:"purpose"`
+	Scope        admin.Scope              `json:"scope"`
+	Channel      string                   `json:"channel"`
+	TargetGroup  string                   `json:"target_group"`
+	Action       string                   `json:"action"`
+	Result       string                   `json:"result"`
+	Count        int                      `json:"count"`
+	Targets      []string                 `json:"targets"`
+	Fields       []string                 `json:"fields"`
+	Basis        []string                 `json:"basis"`
+	CreatedAt    time.Time                `json:"created_at"`
+	Scopes       []admin.Scope            `json:"-"`
+	TargetScopes map[string][]admin.Scope `json:"-"`
 }
 type AuditFilter struct {
-	Scope   admin.Scope `json:"scope"`
-	Purpose string      `json:"purpose"`
-	After   string      `json:"after"`
-	Limit   int         `json:"limit"`
+	Scope        admin.Scope `json:"scope"`
+	Purpose      string      `json:"purpose"`
+	After        string      `json:"after"`
+	Limit        int         `json:"limit"`
+	Actor        string      `json:"actor,omitempty"`
+	Target       string      `json:"target,omitempty"`
+	Action       string      `json:"action,omitempty"`
+	Result       string      `json:"result,omitempty"`
+	Channel      string      `json:"channel,omitempty"`
+	CreatedFrom  *time.Time  `json:"created_from,omitempty"`
+	CreatedUntil *time.Time  `json:"created_until,omitempty"`
 }
 type AuditPage struct {
 	Items      []Audit `json:"items"`
@@ -157,4 +166,40 @@ type Event struct {
 	Kind      string
 	Code      string
 	Duration  time.Duration
+}
+
+type AuditHold struct {
+	ID            string     `json:"id"`
+	AuditID       string     `json:"audit_id,omitempty"`
+	RequestID     string     `json:"request_id,omitempty"`
+	TargetAccount string     `json:"target_account,omitempty"`
+	Reason        string     `json:"reason"`
+	CreatedBy     string     `json:"created_by"`
+	ReviewAt      time.Time  `json:"review_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ReleasedAt    *time.Time `json:"released_at,omitempty"`
+	ReleasedBy    string     `json:"released_by,omitempty"`
+	ReleaseReason string     `json:"release_reason,omitempty"`
+}
+
+type AuditHoldInput struct {
+	AuditID       string
+	RequestID     string
+	TargetAccount string
+	Reason        string
+	CreatedBy     string
+	ReviewAt      time.Time
+}
+
+type AuditHoldRelease struct {
+	ID     string
+	Actor  string
+	Reason string
+}
+
+// AuditHoldManager records and releases per-object legal holds under a dedicated governance role.
+type AuditHoldManager interface {
+	CreateHold(ctx context.Context, in AuditHoldInput) (AuditHold, error)
+	ReleaseHold(ctx context.Context, in AuditHoldRelease) (AuditHold, error)
+	ListActiveHolds(ctx context.Context, after string, limit int) ([]AuditHold, string, error)
 }
