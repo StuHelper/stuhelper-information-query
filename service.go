@@ -29,6 +29,13 @@ type Service struct {
 func clean(v string, max int) bool {
 	return v != "" && len(v) <= max && utf8.ValidString(v) && !strings.ContainsFunc(v, unicode.IsControl)
 }
+func validQueryValue(kind, value string) bool {
+	if kind == "account" {
+		_, err := account.Parse(value)
+		return err == nil
+	}
+	return utf8.ValidString(value) && value != "" && utf8.RuneCountInString(value) <= 256 && !strings.ContainsFunc(value, unicode.IsControl)
+}
 func scopeOK(s admin.Scope) bool { return s.Valid() }
 func selection(v, allowed []string, min int) bool {
 	if len(v) < min || len(v) > len(allowed) {
@@ -101,7 +108,7 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !clean(q.Purpose, 512) || !validQueryValue(q.Kind, q.Value) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
 		return out, ErrInvalid
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {

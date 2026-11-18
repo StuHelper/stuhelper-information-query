@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -33,7 +33,9 @@ Query(ctx context.Context, principal account.Principal, query Query) ([]Record, 
 PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 ```
 
-Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。Account 是 issuer 与 subject 组成的完整账号键，不得以昵称、学号或 QQ 值代替。
+Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。
+
+Account 使用平台 Principal.Key() 生成的完整账号键，最多 2048 字节。直接输入无效账号键返回 400，解析器给出无效账号键返回 503，两种情况均在访问业务域前结束。其他线索最多 256 个 Unicode 码点。
 
 Service.Resolvers 按 kind 装配：name、student_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
 

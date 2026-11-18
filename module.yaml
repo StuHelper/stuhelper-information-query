@@ -39,6 +39,7 @@ scenario_tests:
   IQ-05:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
+    - account_query_test.go#TestQueryRequiresCanonicalAccount
     - service_test.go#TestSensitiveMaskAuditAndFailure
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
   IQ-07:

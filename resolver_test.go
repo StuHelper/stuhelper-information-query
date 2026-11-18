@@ -47,7 +47,7 @@ type accountProvider struct {
 func (p *accountProvider) Query(_ context.Context, _ account.Principal, q iq.Query) ([]iq.Record, error) {
 	p.calls++
 	p.requested += q.Limit
-	if q.Kind != "account" || (q.Value != "issuer:alice" && q.Value != "issuer:bob") {
+	if q.Kind != "account" || (q.Value != (account.Principal{Issuer: "test", Subject: "alice"}).Key() && q.Value != (account.Principal{Issuer: "test", Subject: "bob"}).Key()) {
 		return nil, errors.New("raw clue reached provider")
 	}
 	result := []iq.Record{}
@@ -74,7 +74,7 @@ func resolvedFixture() (*iq.Service, *resolver, *accountProvider, iq.Query) {
 	q.Kind = "name"
 	q.Value = "same name"
 	r := &resolver{candidates: []iq.Candidate{}}
-	for i, account := range []string{"issuer:alice", "issuer:bob"} {
+	for i, account := range []string{(account.Principal{Issuer: "test", Subject: "alice"}).Key(), (account.Principal{Issuer: "test", Subject: "bob"}).Key()} {
 		r.candidates = append(r.candidates, iq.Candidate{Account: account, Source: "verification", Current: i == 0, ChangedAt: time.Unix(100, 0), Scope: q.Scope, Label: []iq.Field{{Name: "name", Category: "identity", Value: "***", Masked: true}}})
 	}
 	p := &accountProvider{domain: "profiles"}
@@ -187,7 +187,7 @@ func TestCandidateChangeAndWorkBound(t *testing.T) {
 		t.Fatal(e)
 	}
 	q.After = out.NextCursor
-	r.candidates[0].Account = "issuer:bob"
+	r.candidates[0].Account = (account.Principal{Issuer: "test", Subject: "bob"}).Key()
 	if _, e = run(s, q); e != iq.ErrUnavailable {
 		t.Fatal("stale candidate accepted", e)
 	}
