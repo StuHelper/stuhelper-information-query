@@ -34,6 +34,7 @@ func (r Repository) Migrate(ctx context.Context) error {
 }
 
 func (r Repository) Append(ctx context.Context, a iq.Audit) error {
+	a = iq.SanitizeAudit(a)
 	b, e := json.Marshal(a)
 	if e != nil {
 		return e
@@ -65,6 +66,7 @@ func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPag
 		if err = json.Unmarshal(b, &a); err != nil {
 			return out, err
 		}
+		a = iq.SanitizeAudit(a)
 		a.ID = strconv.FormatInt(id, 10)
 		out.Items = append(out.Items, a)
 	}

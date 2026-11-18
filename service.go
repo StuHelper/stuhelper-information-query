@@ -16,6 +16,9 @@ import (
 
 var domains = []string{"profiles", "verification", "catalog", "reviews", "resources", "billing", "groups"}
 var categories = []string{"identity", "document", "material", "refund_payee"}
+var auditChannels = []string{"admin", "bot_private", "bot_group", "unknown"}
+var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rejected", "provider.query"}
+var auditResults = []string{"success", "denied", "invalid_request", "unauthenticated", "unavailable"}
 
 type Service struct {
 	Auth       Authorizer
@@ -26,8 +29,14 @@ type Service struct {
 	Now        func() time.Time
 }
 
+func isDisallowedTextControl(r rune) bool {
+	return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t'
+}
 func clean(v string, max int) bool {
 	return v != "" && len(v) <= max && utf8.ValidString(v) && !strings.ContainsFunc(v, unicode.IsControl)
+}
+func cleanText(v string, max int) bool {
+	return v != "" && len(v) <= max*4 && utf8.ValidString(v) && utf8.RuneCountInString(v) <= max && !strings.ContainsFunc(v, isDisallowedTextControl)
 }
 func scopeOK(s admin.Scope) bool { return s.Valid() }
 func selection(v, allowed []string, min int) bool {
@@ -70,13 +79,18 @@ func (s Service) start(p account.Principal, requestID, purpose, action string, s
 func (s Service) finish(ctx context.Context, a Audit, err error) error {
 	a.Result = "success"
 	if err != nil {
-		a.Result = "unavailable"
-		for _, e := range []error{ErrInvalid, ErrForbidden, ErrUnauthenticated} {
-			if errors.Is(err, e) {
-				a.Result = e.Error()
-			}
+		switch {
+		case errors.Is(err, ErrForbidden):
+			a.Result = "denied"
+		case errors.Is(err, ErrInvalid):
+			a.Result = ErrInvalid.Error()
+		case errors.Is(err, ErrUnauthenticated):
+			a.Result = ErrUnauthenticated.Error()
+		default:
+			a.Result = "unavailable"
 		}
 	}
+	a = SanitizeAudit(a)
 	// A cancelled caller must not prevent recording a denial or a completed disclosure.
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
@@ -101,12 +115,13 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !cleanText(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
 		return out, ErrInvalid
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {
 		return out, ErrInvalid
 	}
+	a.Fields = append([]string{}, q.Fields...)
 	if d.Channel != "admin" {
 		if !s.BotEnabled {
 			return out, ErrForbidden
@@ -115,7 +130,6 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 			return out, err
 		}
 	}
-	a.Fields = append([]string{}, q.Fields...)
 	out, err = s.resolveQuery(ctx, p, q, &a)
 	if err != nil {
 		return out, err
@@ -125,7 +139,7 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 		a.Count += len(group.Items)
 		for _, r := range group.Items {
 			for _, f := range r.Fields {
-				if !slices.Contains(a.Fields, f.Category) {
+				if f.Category != "business" && !f.Masked && !slices.Contains(a.Fields, f.Category) {
 					a.Fields = append(a.Fields, f.Category)
 				}
 			}
@@ -234,7 +248,7 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(f.Purpose, 512) || !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 {
+	if !clean(id, 128) || !cleanText(f.Purpose, 512) || !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 {
 		return out, ErrInvalid
 	}
 	if f.After != "" {

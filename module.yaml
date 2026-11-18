@@ -40,7 +40,10 @@ scenario_tests:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
     - service_test.go#TestSensitiveMaskAuditAndFailure
+    - service_test.go#TestUnicodeMultilinePurposeAndControlChars
+    - service_test.go#TestAuditFieldsExcludeMaskedAndBusinessAndDeniedResult
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
+    - postgres/repository_test.go#TestMalformedInputAuditSanitizationAndNonNullSlices
   IQ-07:
     - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit
     - service_test.go#TestSensitiveMaskAuditAndFailure
