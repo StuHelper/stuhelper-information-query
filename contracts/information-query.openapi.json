@@ -69,6 +69,46 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Unknown route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -137,6 +177,114 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Unknown route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/information-query/capabilities": {
+      "post": {
+        "operationId": "queryInformationCapabilities",
+        "description": "Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilitiesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -193,7 +341,8 @@
           "value": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 2048,
+            "description": "Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -234,7 +383,9 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed."
           },
           "limit": {
             "type": "integer",
@@ -245,7 +396,7 @@
           "after": {
             "type": "string",
             "maxLength": 4096,
-            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation."
+            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant."
           }
         },
         "required": [
@@ -255,7 +406,21 @@
           "domains",
           "purpose",
           "limit"
-        ]
+        ],
+        "not": {
+          "properties": {
+            "kind": {
+              "not": {
+                "enum": [
+                  "account"
+                ]
+              }
+            },
+            "value": {
+              "minLength": 257
+            }
+          }
+        }
       },
       "Field": {
         "type": "object",
@@ -362,6 +527,62 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "invalid_parameter",
+              "invalid_scope",
+              "school_required",
+              "invalid_account_key",
+              "cursor_mismatch",
+              "candidate_changed",
+              "payload_too_large",
+              "bot_disabled",
+              "bot_forbidden",
+              "channel_forbidden",
+              "domain_forbidden",
+              "field_forbidden",
+              "audit_forbidden",
+              "unauthenticated",
+              "auth_unavailable",
+              "resolver_unavailable",
+              "provider_unavailable",
+              "audit_unavailable"
+            ],
+            "description": "Machine-readable failure cause for localized recovery guidance."
+          },
+          "domain": {
+            "type": "string",
+            "enum": [
+              "profiles",
+              "verification",
+              "catalog",
+              "reviews",
+              "resources",
+              "billing",
+              "groups"
+            ],
+            "description": "Affected business domain when a domain check or provider failed; never echoes query values.",
+            "x-enum-varnames": [
+              "ErrorDomainProfiles",
+              "ErrorDomainVerification",
+              "ErrorDomainCatalog",
+              "ErrorDomainReviews",
+              "ErrorDomainResources",
+              "ErrorDomainBilling",
+              "ErrorDomainGroups"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "identity",
+              "document",
+              "material",
+              "refund_payee"
+            ],
+            "description": "Affected sensitive field category when field authorization failed; never echoes query values."
           }
         },
         "required": [
@@ -378,17 +599,54 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters."
           },
           "after": {
             "type": "string",
             "pattern": "^[0-9]*$",
-            "description": "Optional audit pagination cursor; omitted or empty string starts from the first page."
+            "description": "Omitted or empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page."
           },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional exact operator account key filter."
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional target account key matched against recorded audit targets."
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional audit action filter."
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional execution result filter."
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional delivery channel filter."
+          },
+          "created_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive lower bound on audit creation time."
+          },
+          "created_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive upper bound on audit creation time."
           }
         },
         "required": [
@@ -417,16 +675,38 @@
             "$ref": "#/components/schemas/Scope"
           },
           "channel": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "admin",
+              "bot_private",
+              "bot_group",
+              "unknown"
+            ]
           },
           "target_group": {
             "type": "string"
           },
           "action": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "query",
+              "query.rejected",
+              "audit.query",
+              "audit.rejected",
+              "provider.query",
+              "unknown"
+            ]
           },
           "result": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "success",
+              "denied",
+              "invalid_request",
+              "unauthenticated",
+              "unavailable",
+              "unknown"
+            ]
           },
           "count": {
             "type": "integer"
@@ -440,7 +720,13 @@
           "fields": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "identity",
+                "document",
+                "material",
+                "refund_payee"
+              ]
             }
           },
           "basis": {
@@ -505,7 +791,8 @@
           },
           "changed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -549,6 +836,135 @@
           "candidate",
           "items",
           "has_more"
+        ]
+      },
+      "CapabilitiesRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "allowed_domains": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAllowedDomainsProfiles",
+                "CapabilitiesAllowedDomainsVerification",
+                "CapabilitiesAllowedDomainsCatalog",
+                "CapabilitiesAllowedDomainsReviews",
+                "CapabilitiesAllowedDomainsResources",
+                "CapabilitiesAllowedDomainsBilling",
+                "CapabilitiesAllowedDomainsGroups"
+              ]
+            },
+            "description": "Domains authorized for the current principal within the evaluated scope."
+          },
+          "allowed_fields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "identity",
+                "document",
+                "material",
+                "refund_payee"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAllowedFieldsIdentity",
+                "CapabilitiesAllowedFieldsDocument",
+                "CapabilitiesAllowedFieldsMaterial",
+                "CapabilitiesAllowedFieldsRefundPayee"
+              ]
+            },
+            "description": "Sensitive field categories authorized for the current principal across the evaluated scope."
+          },
+          "available_domains": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAvailableDomainsProfiles",
+                "CapabilitiesAvailableDomainsVerification",
+                "CapabilitiesAvailableDomainsCatalog",
+                "CapabilitiesAvailableDomainsReviews",
+                "CapabilitiesAvailableDomainsResources",
+                "CapabilitiesAvailableDomainsBilling",
+                "CapabilitiesAvailableDomainsGroups"
+              ]
+            },
+            "description": "Domains with registered providers on the current host."
+          },
+          "available_kinds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "student_id",
+                "qq",
+                "account",
+                "staff_id"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAvailableKindsName",
+                "CapabilitiesAvailableKindsStudentId",
+                "CapabilitiesAvailableKindsQq",
+                "CapabilitiesAvailableKindsAccount",
+                "CapabilitiesAvailableKindsStaffId"
+              ]
+            },
+            "description": "Query lead kinds currently supported on the host."
+          },
+          "audit_readable": {
+            "type": "boolean",
+            "description": "Whether the current principal may read audit logs in the evaluated scope on the current channel."
+          },
+          "bot_enabled": {
+            "type": "boolean",
+            "description": "Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope."
+          }
+        },
+        "required": [
+          "scope",
+          "allowed_domains",
+          "allowed_fields",
+          "available_domains",
+          "available_kinds",
+          "audit_readable",
+          "bot_enabled"
         ]
       }
     },
