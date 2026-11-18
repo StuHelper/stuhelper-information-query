@@ -50,15 +50,17 @@ export interface components {
         Query: {
             /** @enum {string} */
             kind: "name" | "student_id" | "qq" | "account";
+            /** @description Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points. */
             value: string;
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
             /** @description Sensitive categories explicitly requested; omitted means masked identity fields only. */
             fields?: ("identity" | "document" | "material" | "refund_payee")[];
+            /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. */
             purpose: string;
             /** @description Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page. */
             limit: number;
-            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation. */
+            /** @description Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant. */
             after?: string;
         };
         Field: {
@@ -89,7 +91,9 @@ export interface components {
         };
         AuditFilter: {
             scope: components["schemas"]["Scope"];
+            /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. */
             purpose: string;
+            /** @description Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page. */
             after: string;
             limit: number;
         };
@@ -99,13 +103,16 @@ export interface components {
             request_id: string;
             purpose: string;
             scope: components["schemas"]["Scope"];
-            channel: string;
+            /** @enum {string} */
+            channel: "admin" | "bot_private" | "bot_group" | "unknown";
             target_group: string;
-            action: string;
-            result: string;
+            /** @enum {string} */
+            action: "query" | "query.rejected" | "audit.query" | "audit.rejected" | "provider.query" | "unknown";
+            /** @enum {string} */
+            result: "success" | "denied" | "invalid_request" | "unauthenticated" | "unavailable" | "unknown";
             count: number;
             targets: string[];
-            fields: string[];
+            fields: ("identity" | "document" | "material" | "refund_payee")[];
             basis: string[];
             /** Format: date-time */
             created_at: string;
@@ -118,7 +125,10 @@ export interface components {
             account: string;
             source: string;
             current: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time.
+             */
             changed_at: string;
             scope: components["schemas"]["Scope"];
             /** @description Masked distinguishing fields only. */
@@ -186,6 +196,34 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unknown route */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    Allow?: "POST";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expected application/json */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Dependency or audit unavailable */
             503: {
                 headers: {
@@ -239,6 +277,34 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unknown route */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Method not allowed */
+            405: {
+                headers: {
+                    Allow?: "POST";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expected application/json */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
