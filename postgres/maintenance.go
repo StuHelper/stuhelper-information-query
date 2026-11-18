@@ -16,6 +16,9 @@ type Maintenance struct {
 }
 
 func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int) (int, error) {
+	if m.Pool == nil {
+		return 0, iq.ErrUnavailable
+	}
 	months := m.RetentionMonths
 	if months == 0 {
 		months = 12

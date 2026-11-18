@@ -31,6 +31,7 @@ scenario_tests:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-02:
     - service_test.go#TestScopeAndDomainIsolation
+    - postgres/repository_test.go#TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction
   IQ-03:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-04:
@@ -39,16 +40,26 @@ scenario_tests:
   IQ-05:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-06:
+    - account_query_test.go#TestQueryRequiresCanonicalAccount
     - service_test.go#TestSensitiveMaskAuditAndFailure
+    - service_test.go#TestUnicodeMultilinePurposeAndControlChars
+    - service_test.go#TestAuditFieldsExcludeMaskedAndBusinessAndDeniedResult
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
+    - postgres/repository_test.go#TestAuditDescendingPaginationTerminatesUnderSelfAudit
+    - postgres/repository_test.go#TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate
+    - postgres/repository_test.go#TestMalformedInputAuditSanitizationAndNonNullSlices
   IQ-07:
     - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit
+    - postgres/repository_test.go#TestNilPoolReturnsUnavailable
     - service_test.go#TestSensitiveMaskAuditAndFailure
   IQ-08:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-09:
     - resolver_test.go#TestResolverFailureAndIsolation
   IQ-10:
+    - cursor_test.go#TestCursorAuthenticityAndEquivalentSelections
+    - cursor_test.go#TestConfiguredCursorKeyAcrossReplicas
+    - cursor_test.go#TestResolverPositionValidatedBeforeContinuation
     - candidate_page_test.go#TestContinuationKeepsGroupIdentityAndSkipsExhaustedTarget
     - candidate_page_test.go#TestExhaustedGroupAdvancesToNextCandidate
     - resolver_test.go#TestCompositePagination

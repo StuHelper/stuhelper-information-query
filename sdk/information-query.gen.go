@@ -15,6 +15,114 @@ import (
 	"time"
 )
 
+// Defines values for AuditAction.
+const (
+	AuditActionAuditQuery    AuditAction = "audit.query"
+	AuditActionAuditRejected AuditAction = "audit.rejected"
+	AuditActionProviderQuery AuditAction = "provider.query"
+	AuditActionQuery         AuditAction = "query"
+	AuditActionQueryRejected AuditAction = "query.rejected"
+	AuditActionUnknown       AuditAction = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditAction enum.
+func (e AuditAction) Valid() bool {
+	switch e {
+	case AuditActionAuditQuery:
+		return true
+	case AuditActionAuditRejected:
+		return true
+	case AuditActionProviderQuery:
+		return true
+	case AuditActionQuery:
+		return true
+	case AuditActionQueryRejected:
+		return true
+	case AuditActionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditChannel.
+const (
+	AuditChannelAdmin      AuditChannel = "admin"
+	AuditChannelBotGroup   AuditChannel = "bot_group"
+	AuditChannelBotPrivate AuditChannel = "bot_private"
+	AuditChannelUnknown    AuditChannel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditChannel enum.
+func (e AuditChannel) Valid() bool {
+	switch e {
+	case AuditChannelAdmin:
+		return true
+	case AuditChannelBotGroup:
+		return true
+	case AuditChannelBotPrivate:
+		return true
+	case AuditChannelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditFields.
+const (
+	AuditFieldsDocument    AuditFields = "document"
+	AuditFieldsIdentity    AuditFields = "identity"
+	AuditFieldsMaterial    AuditFields = "material"
+	AuditFieldsRefundPayee AuditFields = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the AuditFields enum.
+func (e AuditFields) Valid() bool {
+	switch e {
+	case AuditFieldsDocument:
+		return true
+	case AuditFieldsIdentity:
+		return true
+	case AuditFieldsMaterial:
+		return true
+	case AuditFieldsRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditResult.
+const (
+	AuditResultDenied          AuditResult = "denied"
+	AuditResultInvalidRequest  AuditResult = "invalid_request"
+	AuditResultSuccess         AuditResult = "success"
+	AuditResultUnauthenticated AuditResult = "unauthenticated"
+	AuditResultUnavailable     AuditResult = "unavailable"
+	AuditResultUnknown         AuditResult = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditResult enum.
+func (e AuditResult) Valid() bool {
+	switch e {
+	case AuditResultDenied:
+		return true
+	case AuditResultInvalidRequest:
+		return true
+	case AuditResultSuccess:
+		return true
+	case AuditResultUnauthenticated:
+		return true
+	case AuditResultUnavailable:
+		return true
+	case AuditResultUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FieldCategory.
 const (
 	FieldCategoryBusiness    FieldCategory = "business"
@@ -125,26 +233,41 @@ func (e QueryKind) Valid() bool {
 
 // Audit defines model for Audit.
 type Audit struct {
-	Action      string    `json:"action"`
-	Actor       string    `json:"actor"`
-	Basis       []string  `json:"basis"`
-	Channel     string    `json:"channel"`
-	Count       int       `json:"count"`
-	CreatedAt   time.Time `json:"created_at"`
-	Fields      []string  `json:"fields"`
-	Id          string    `json:"id"`
-	Purpose     string    `json:"purpose"`
-	RequestId   string    `json:"request_id"`
-	Result      string    `json:"result"`
-	Scope       Scope     `json:"scope"`
-	TargetGroup string    `json:"target_group"`
-	Targets     []string  `json:"targets"`
+	Action      AuditAction   `json:"action"`
+	Actor       string        `json:"actor"`
+	Basis       []string      `json:"basis"`
+	Channel     AuditChannel  `json:"channel"`
+	Count       int           `json:"count"`
+	CreatedAt   time.Time     `json:"created_at"`
+	Fields      []AuditFields `json:"fields"`
+	Id          string        `json:"id"`
+	Purpose     string        `json:"purpose"`
+	RequestId   string        `json:"request_id"`
+	Result      AuditResult   `json:"result"`
+	Scope       Scope         `json:"scope"`
+	TargetGroup string        `json:"target_group"`
+	Targets     []string      `json:"targets"`
 }
+
+// AuditAction defines model for Audit.Action.
+type AuditAction string
+
+// AuditChannel defines model for Audit.Channel.
+type AuditChannel string
+
+// AuditFields defines model for Audit.Fields.
+type AuditFields string
+
+// AuditResult defines model for Audit.Result.
+type AuditResult string
 
 // AuditFilter defines model for AuditFilter.
 type AuditFilter struct {
-	After   string `json:"after"`
-	Limit   int    `json:"limit"`
+	// After Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page.
+	After string `json:"after"`
+	Limit int    `json:"limit"`
+
+	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed.
 	Purpose string `json:"purpose"`
 	Scope   Scope  `json:"scope"`
 }
@@ -193,7 +316,7 @@ type FieldCategory string
 
 // Query defines model for Query.
 type Query struct {
-	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation.
+	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant.
 	After   *string        `json:"after,omitempty"`
 	Domains []QueryDomains `json:"domains"`
 
@@ -202,10 +325,14 @@ type Query struct {
 	Kind   QueryKind      `json:"kind"`
 
 	// Limit Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page.
-	Limit   int    `json:"limit"`
+	Limit int `json:"limit"`
+
+	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed.
 	Purpose string `json:"purpose"`
 	Scope   Scope  `json:"scope"`
-	Value   string `json:"value"`
+
+	// Value Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points.
+	Value string `json:"value"`
 }
 
 // QueryDomains defines model for Query.Domains.
