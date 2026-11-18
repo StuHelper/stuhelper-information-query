@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-information-query/postgres"
 	"github.com/StuHelper/stuhelper-platform/account"
@@ -13,10 +14,32 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
 )
+
+var roleSeq atomic.Uint64
+
+func uniqueSuffix() string {
+	return fmt.Sprintf("%d_%d", time.Now().UnixNano(), roleSeq.Add(1))
+}
+
+func createScopedRole(t *testing.T, pool *pgxpool.Pool, prefix, grants string) string {
+	t.Helper()
+	role := fmt.Sprintf("%s_%s", prefix, uniqueSuffix())
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, fmt.Sprintf("DROP ROLE IF EXISTS %s; CREATE ROLE %s NOLOGIN; %s", role, role, strings.ReplaceAll(grants, "$ROLE", role))); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, fmt.Sprintf("REVOKE ALL ON ALL TABLES IN SCHEMA information_query FROM %s; REVOKE ALL ON ALL SEQUENCES IN SCHEMA information_query FROM %s; REVOKE ALL ON SCHEMA information_query FROM %s; DROP ROLE IF EXISTS %s;", role, role, role, role)); err != nil {
+			t.Errorf("cleanup database fixture: %v", err)
+		}
+	})
+	return role
+}
 
 func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
@@ -28,7 +51,7 @@ func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	r := postgres.Repository{Pool: pool}
 	if e = r.Migrate(ctx); e != nil {
 		t.Fatal(e)
@@ -36,22 +59,28 @@ func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 	if e = r.Migrate(ctx); e != nil {
 		t.Fatal("migration replay", e)
 	}
-	_, e = pool.Exec(ctx, `CREATE ROLE iq_runtime NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_runtime; GRANT SELECT,INSERT ON information_query.audit, information_query.audit_scopes TO iq_runtime; GRANT USAGE ON SEQUENCE information_query.audit_id_seq TO iq_runtime; CREATE SCHEMA foreign_module; CREATE TABLE foreign_module.secret(value text);`)
-	if e != nil {
+	if _, e = pool.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS foreign_module; CREATE TABLE IF NOT EXISTS foreign_module.secret(value text);`); e != nil {
 		t.Fatal(e)
 	}
+	role := createScopedRole(t, pool, "iq_runtime", `GRANT USAGE ON SCHEMA information_query TO $ROLE; GRANT SELECT,INSERT ON information_query.audit,information_query.audit_scopes TO $ROLE; GRANT USAGE ON SEQUENCE information_query.audit_id_seq TO $ROLE;`)
 	cfg, e := pgxpool.ParseConfig(dsn)
 	if e != nil {
 		t.Fatal(e)
 	}
-	cfg.ConnConfig.RuntimeParams["role"] = "iq_runtime"
+	cfg.ConnConfig.RuntimeParams["role"] = role
 	runtime, e := pgxpool.NewWithConfig(ctx, cfg)
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer runtime.Close()
 	r.Pool = runtime
-	a := iq.Audit{Actor: "operator", RequestID: "request", Purpose: "audit-test", Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Channel: "bot_group", TargetGroup: "g", Action: "query", Result: "success", Count: 1, Targets: []string{"subject"}, Fields: []string{"identity"}, Basis: []string{"information-query.identity.read"}, CreatedAt: time.Now().UTC()}
+	testScope := admin.Scope{School: "school-" + uniqueSuffix(), Group: "g", Module: "profiles"}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM information_query.audit WHERE school=$1`, testScope.School); err != nil {
+			t.Errorf("cleanup database fixture: %v", err)
+		}
+	})
+	a := iq.Audit{Actor: "operator", RequestID: "request", Purpose: "audit-test", Scope: testScope, Channel: "bot_group", TargetGroup: "g", Action: "query", Result: "success", Count: 1, Targets: []string{"subject"}, Fields: []string{"identity"}, Basis: []string{"information-query.identity.read"}, CreatedAt: time.Now().UTC()}
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Go(func() {
@@ -73,7 +102,7 @@ func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 	if strings.Contains(string(b), "123456789") {
 		t.Fatal("raw identity in audit")
 	}
-	page, e = r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: "b", Group: "*", Module: "*"}, Limit: 100})
+	page, e = r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: "unmatched-" + uniqueSuffix(), Group: "*", Module: "*"}, Limit: 100})
 	if e != nil || len(page.Items) != 0 {
 		t.Fatal("scope leak", e)
 	}
@@ -83,7 +112,7 @@ func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 		}
 	}
 	// Scope indexing and the audit body must commit together.
-	if _, e = pool.Exec(ctx, `REVOKE INSERT ON information_query.audit_scopes FROM iq_runtime`); e != nil {
+	if _, e = pool.Exec(ctx, `REVOKE INSERT ON information_query.audit_scopes FROM `+role); e != nil {
 		t.Fatal(e)
 	}
 	a.RequestID = "must-roll-back"
@@ -102,10 +131,12 @@ type allow struct{}
 
 func (allow) Evaluate(context.Context, account.Principal, string, admin.Scope) error { return nil }
 
-type records struct{}
+type records struct {
+	scope admin.Scope
+}
 
-func (records) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
-	return []iq.Record{{ID: "profiles:1", Subject: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Source: "test-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "qq", Category: "identity", Value: "123456789"}}}}, nil
+func (rec records) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
+	return []iq.Record{{ID: "profiles:1", Subject: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: rec.scope, Source: "test-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "qq", Category: "identity", Value: "123456789"}}}}, nil
 }
 func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	dsn := os.Getenv("STUHELPER_INFORMATION_QUERY_TEST_DSN")
@@ -117,25 +148,32 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	r := postgres.Repository{Pool: pool}
 	if e = r.Migrate(ctx); e != nil {
 		t.Fatal(e)
 	}
-	s := iq.Service{Auth: allow{}, Repo: r, Providers: map[string]iq.Provider{"profiles": records{}}}
-	q := iq.Query{Kind: "account", Value: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: admin.Scope{School: "a", Group: "g", Module: "profiles"}, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
-	out, e := s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "disclosure-request", iq.Delivery{Channel: "bot_group", Group: "g"}, q)
+	testScope := admin.Scope{School: "commit-" + uniqueSuffix(), Group: "g", Module: "profiles"}
+	reqID := "disclosure-" + uniqueSuffix()
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM information_query.audit WHERE school=$1`, testScope.School); err != nil {
+			t.Errorf("cleanup database fixture: %v", err)
+		}
+	})
+	s := iq.Service{Auth: allow{}, Repo: r, Providers: map[string]iq.Provider{"profiles": records{scope: testScope}}}
+	q := iq.Query{Kind: "account", Value: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: testScope, Domains: []string{"profiles"}, Fields: []string{"identity"}, Purpose: "test disclosure", Limit: 10}
+	out, e := s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, reqID, iq.Delivery{Channel: "bot_group", Group: "g"}, q)
 	if e != iq.ErrForbidden || recordCount(out) != 0 {
 		t.Fatal("bot default", e)
 	}
 	s.BotEnabled = true
-	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "disclosure-request", iq.Delivery{Channel: "bot_group", Group: "g"}, q)
+	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, reqID, iq.Delivery{Channel: "bot_group", Group: "g"}, q)
 	if e != nil || recordCount(out) != 1 || out.Groups[0].Items[0].Fields[0].Value != "123456789" {
 		t.Fatal(e)
 	}
 	var count int
 	var raw string
-	e = pool.QueryRow(ctx, `SELECT count(*),string_agg(body::text,'') FROM information_query.audit WHERE body->>'request_id'='disclosure-request'`).Scan(&count, &raw)
+	e = pool.QueryRow(ctx, `SELECT count(*),string_agg(body::text,'') FROM information_query.audit WHERE body->>'request_id'=$1`, reqID).Scan(&count, &raw)
 	if e != nil || count != 2 || strings.Contains(raw, "123456789") || !strings.Contains(raw, (account.Principal{Issuer: "test", Subject: "user"}).Key()) {
 		t.Fatal("audit commit/content", count, e)
 	}
@@ -151,7 +189,7 @@ func TestSensitiveResponseRequiresCommittedAudit(t *testing.T) {
 	}
 	defer readOnly.Close()
 	s.Repo = postgres.Repository{Pool: readOnly}
-	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "blocked", iq.Delivery{Channel: "admin"}, q)
+	out, e = s.Query(ctx, account.Principal{Issuer: "test", Subject: "operator"}, "blocked-"+uniqueSuffix(), iq.Delivery{Channel: "admin"}, q)
 	if e != iq.ErrUnavailable || recordCount(out) != 0 {
 		t.Fatal("failed commit leaked", e)
 	}
@@ -175,22 +213,26 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	r := postgres.Repository{Pool: pool}
 	if e = r.Migrate(ctx); e != nil {
 		t.Fatal(e)
 	}
+	pruneScope := admin.Scope{School: "prune-" + uniqueSuffix(), Group: "*", Module: "*"}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM information_query.audit WHERE school=$1`, pruneScope.School); err != nil {
+			t.Errorf("cleanup database fixture: %v", err)
+		}
+	})
 	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
 	cutoff := now.AddDate(-1, 0, 0)
 	for _, at := range []time.Time{cutoff.Add(-time.Second), cutoff.Add(-time.Second), cutoff.Add(-time.Second), cutoff, cutoff.Add(time.Second)} {
-		if e = r.Append(ctx, iq.Audit{Scope: admin.Global, CreatedAt: at}); e != nil {
+		if e = r.Append(ctx, iq.Audit{Scope: pruneScope, Targets: []string{}, Fields: []string{}, Basis: []string{}, CreatedAt: at}); e != nil {
 			t.Fatal(e)
 		}
 	}
-	_, e = pool.Exec(ctx, `CREATE ROLE iq_maintenance NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_maintenance; GRANT SELECT,DELETE ON information_query.audit TO iq_maintenance; CREATE ROLE iq_prune_runtime NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_prune_runtime; GRANT SELECT,INSERT ON information_query.audit TO iq_prune_runtime;`)
-	if e != nil {
-		t.Fatal(e)
-	}
+	maintRole := createScopedRole(t, pool, "iq_maintenance", `GRANT USAGE ON SCHEMA information_query TO $ROLE; GRANT SELECT,DELETE ON information_query.audit TO $ROLE;`)
+	runtimeRole := createScopedRole(t, pool, "iq_prune_runtime", `GRANT USAGE ON SCHEMA information_query TO $ROLE; GRANT SELECT,INSERT ON information_query.audit,information_query.audit_scopes TO $ROLE;`)
 	makePool := func(role string) *pgxpool.Pool {
 		cfg, e := pgxpool.ParseConfig(dsn)
 		if e != nil {
@@ -204,8 +246,8 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 		t.Cleanup(p.Close)
 		return p
 	}
-	m := postgres.Maintenance{Pool: makePool("iq_maintenance"), Now: func() time.Time { return now }}
-	runtime := postgres.Maintenance{Pool: makePool("iq_prune_runtime"), Now: m.Now}
+	m := postgres.Maintenance{Pool: makePool(maintRole), Now: func() time.Time { return now }}
+	runtime := postgres.Maintenance{Pool: makePool(runtimeRole), Now: m.Now}
 	if n, e := runtime.PruneAudit(ctx, cutoff, 1); e == nil || n != 0 {
 		t.Fatal("runtime deletion allowed", n, e)
 	}
@@ -230,7 +272,7 @@ func TestBoundedPruneAndMaintenancePrivileges(t *testing.T) {
 		}
 	}
 	var kept int
-	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE created_at=$1 OR created_at=$2`, cutoff, cutoff.Add(time.Second)).Scan(&kept); e != nil || kept != 2 {
+	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE school=$3 AND (created_at=$1 OR created_at=$2)`, cutoff, cutoff.Add(time.Second), pruneScope.School).Scan(&kept); e != nil || kept != 2 {
 		t.Fatal("boundary removed", kept, e)
 	}
 }

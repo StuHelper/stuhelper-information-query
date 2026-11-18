@@ -46,6 +46,7 @@ scenario_tests:
     - service_test.go#TestSensitiveMaskAuditAndFailure
     - service_test.go#TestUnicodeMultilinePurposeAndControlChars
     - service_test.go#TestAuditFieldsExcludeMaskedAndBusinessAndDeniedResult
+    - httpapi/handler_test.go#TestHTTPEndpointsStatusCodesAndOpenAPIContract
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
     - postgres/repository_test.go#TestAuditDescendingPaginationTerminatesUnderSelfAudit
     - postgres/repository_test.go#TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate
