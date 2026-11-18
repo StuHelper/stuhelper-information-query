@@ -38,8 +38,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	const queryPath = "/api/v1/information-query/query"
 	const auditPath = "/api/v1/information-query/audit/query"
+	const previewPath = "/api/v1/information-query/preview"
 	const capabilitiesPath = "/api/v1/information-query/capabilities"
-	if r.URL.Path != queryPath && r.URL.Path != auditPath && r.URL.Path != capabilitiesPath {
+	if r.URL.Path != queryPath && r.URL.Path != auditPath && r.URL.Path != capabilitiesPath && r.URL.Path != previewPath {
 		writeCode(w, 404, "not_found")
 		return
 	}
@@ -79,6 +80,16 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out any
+	if r.URL.Path == previewPath {
+		var q iq.BatchQuery
+		if err = decode(w, r, &q); err == nil {
+			out, err = h.Service.Preview(r.Context(), p, id, d, q)
+		} else {
+			err = reject(r.Context(), p, id, d, err)
+		}
+		write(w, out, err)
+		return
+	}
 	if r.URL.Path == capabilitiesPath {
 		var q iq.CapabilitiesRequest
 		if err = decode(w, r, &q); err == nil {

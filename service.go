@@ -17,7 +17,7 @@ var domains = []string{"profiles", "verification", "catalog", "reviews", "resour
 var categories = []string{"identity", "document", "material", "refund_payee"}
 var kinds = []string{"name", "student_id", "staff_id", "qq", "account"}
 var auditChannels = []string{"admin", "bot_private", "bot_group", "unknown"}
-var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rejected", "provider.query"}
+var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rejected", "provider.query", "batch.preview"}
 var auditResults = []string{"success", "denied", "invalid_request", "unauthenticated", "unavailable"}
 
 func detailErr(base error, reason, domain, field string) error {

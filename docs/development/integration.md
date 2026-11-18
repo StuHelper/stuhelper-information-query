@@ -11,6 +11,7 @@ updated: 2026-11-19
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
 | POST | `/api/v1/information-query/query` | 按线索解析候选，再按账号查询业务域 |
+| POST | `/api/v1/information-query/preview` | 管理端有界批量线索掩码与计数预览（禁止展开敏感字段） |
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
 | POST | `/api/v1/information-query/capabilities` | 当前操作者在指定范围下的只读能力与装配预检 |
 
@@ -33,6 +34,8 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、staff_id、qq、ac
 失败响应保留 code，并通过可选 reason、domain、field 返回细分机器码（如 school_required、candidate_changed、domain_forbidden、field_forbidden）与受阻枚举标识，从不回显原始查询值。
 
 capabilities 接收可选 scope（默认全局范围），返回当前操作者可查的 allowed_domains、allowed_fields、audit_readable、bot_enabled 以及宿主已装配的 available_domains、available_kinds，不追加审计记录。
+
+批量预览每次最多接收 20 条同类型唯一线索，仅开放给 admin 渠道且要求独立能力 `information-query.batch.read`。接口不接受 fields 参数，仅在审计提交成功后返回候选状态与每域最多 20 条的脱敏计数摘要，不回显原始线索或业务字段值。
 
 ## 端口与装配
 
@@ -80,6 +83,7 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 | `information-query.material.read` | 认证原始材料 |
 | `information-query.refund.read` | refund_payee 类别的退款收款资料 |
 | `information-query.bot` | 机器人查询 |
+| `information-query.batch.read` | 管理端有界批量线索预览 |
 | `information-query.audit.read` | 审计查询 |
 
 每次 Query 对同一操作者、能力和完整范围只执行一次成功的编排层授权检查。不同学校、群和模块分别检查，每次翻页重新授权。各域 Provider 继续独立授权。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。

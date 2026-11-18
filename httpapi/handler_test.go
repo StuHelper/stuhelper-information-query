@@ -622,3 +622,46 @@ func TestAuditFilterOptionalAfterInSDK(t *testing.T) {
 type allowAll struct{}
 
 func (allowAll) Evaluate(context.Context, account.Principal, string, admin.Scope) error { return nil }
+
+func TestBatchPreviewHTTPRejectsSensitiveFieldsAndSupportsSDK(t *testing.T) {
+	actor := account.Principal{Issuer: "issuer", Subject: "admin"}
+	svc := &iq.Service{
+		Auth:      allowAll{},
+		Repo:      &auditRepo{},
+		Providers: map[string]iq.Provider{"profiles": emptyProvider{}},
+	}
+	h := httpapi.Handler{
+		Service: svc,
+		Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+			return actor, iq.Delivery{Channel: "admin"}, "req-preview"
+		},
+	}
+	// Passing fields in /preview must be rejected with 400.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/information-query/preview", strings.NewReader(`{"kind":"account","values":["issuer:u1"],"scope":{"school":"buaa","group":"*","module":"*"},"domains":["profiles"],"fields":["identity"],"purpose":"batch"}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("expected 400 when fields supplied to /preview, got %d %s", w.Code, w.Body.String())
+	}
+
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	client, err := sdk.NewClientWithResponses(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.PreviewInformationBatchWithResponse(context.Background(), sdk.BatchPreviewRequest{
+		Kind:    sdk.BatchPreviewRequestKindAccount,
+		Values:  []string{(account.Principal{Issuer: "issuer", Subject: "u1"}).Key(), (account.Principal{Issuer: "issuer", Subject: "u2"}).Key()},
+		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
+		Domains: []sdk.BatchPreviewRequestDomains{sdk.BatchPreviewRequestDomainsProfiles},
+		Purpose: "批量核对",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil || len(resp.JSON200.Entries) != 2 {
+		t.Fatalf("unexpected SDK preview response: status=%d body=%s", resp.StatusCode(), string(resp.Body))
+	}
+}

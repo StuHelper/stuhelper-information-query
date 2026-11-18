@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/information-query/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits. */
+        post: operations["previewInformationBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -212,6 +229,42 @@ export interface components {
             audit_readable: boolean;
             /** @description Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope. */
             bot_enabled: boolean;
+        };
+        BatchPreviewRequest: {
+            /** @enum {string} */
+            kind: "name" | "student_id" | "qq" | "account" | "staff_id";
+            /** @description Up to 20 unique leads of the same kind; raw values are never echoed or logged. */
+            values: string[];
+            scope: components["schemas"]["Scope"];
+            domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
+            purpose: string;
+        };
+        DomainSummary: {
+            /** @enum {string} */
+            domain: "profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups";
+            /** @description Bounded count of authorized records (capped at 20 per domain in batch preview). */
+            count: number;
+            /** @description Bounded count of current=true records among the sampled domain items. */
+            current_count: number;
+            /** @description True when the candidate has more than 20 records in this domain. */
+            has_more: boolean;
+        };
+        CandidatePreview: {
+            candidate: components["schemas"]["Candidate"];
+            domain_counts: components["schemas"]["DomainSummary"][];
+        };
+        BatchPreviewEntry: {
+            /** @description Zero-based index corresponding to the input values array without echoing raw lead text. */
+            index: number;
+            candidates: components["schemas"]["CandidatePreview"][];
+            /** @description True when additional candidates existed beyond the per-lead or batch processing budget. */
+            has_more_candidates: boolean;
+        };
+        BatchPreviewResult: {
+            entries: components["schemas"]["BatchPreviewEntry"][];
+            unavailable_domains: string[];
+            /** @description True when the overall batch candidate (50) or record (700) budget stopped further probing. */
+            truncated: boolean;
         };
     };
     responses: never;
@@ -448,6 +501,66 @@ export interface operations {
                 };
             };
             /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    previewInformationBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPreviewResult"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Dependency or audit unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

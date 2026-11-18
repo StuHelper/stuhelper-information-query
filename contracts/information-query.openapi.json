@@ -288,6 +288,74 @@
           }
         }
       }
+    },
+    "/api/v1/information-query/preview": {
+      "post": {
+        "operationId": "previewInformationBatch",
+        "description": "Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPreviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency or audit unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "security": [
@@ -965,6 +1033,207 @@
           "available_kinds",
           "audit_readable",
           "bot_enabled"
+        ]
+      },
+      "BatchPreviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "name",
+              "student_id",
+              "qq",
+              "account",
+              "staff_id"
+            ],
+            "x-enum-varnames": [
+              "BatchPreviewRequestKindName",
+              "BatchPreviewRequestKindStudentId",
+              "BatchPreviewRequestKindQq",
+              "BatchPreviewRequestKindAccount",
+              "BatchPreviewRequestKindStaffId"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Up to 20 unique leads of the same kind; raw values are never echoed or logged."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "domains": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ],
+              "x-enum-varnames": [
+                "BatchPreviewRequestDomainsProfiles",
+                "BatchPreviewRequestDomainsVerification",
+                "BatchPreviewRequestDomainsCatalog",
+                "BatchPreviewRequestDomainsReviews",
+                "BatchPreviewRequestDomainsResources",
+                "BatchPreviewRequestDomainsBilling",
+                "BatchPreviewRequestDomainsGroups"
+              ]
+            }
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "kind",
+          "values",
+          "scope",
+          "domains",
+          "purpose"
+        ]
+      },
+      "DomainSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "type": "string",
+            "enum": [
+              "profiles",
+              "verification",
+              "catalog",
+              "reviews",
+              "resources",
+              "billing",
+              "groups"
+            ],
+            "x-enum-varnames": [
+              "DomainSummaryDomainProfiles",
+              "DomainSummaryDomainVerification",
+              "DomainSummaryDomainCatalog",
+              "DomainSummaryDomainReviews",
+              "DomainSummaryDomainResources",
+              "DomainSummaryDomainBilling",
+              "DomainSummaryDomainGroups"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Bounded count of authorized records (capped at 20 per domain in batch preview)."
+          },
+          "current_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Bounded count of current=true records among the sampled domain items."
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "True when the candidate has more than 20 records in this domain."
+          }
+        },
+        "required": [
+          "domain",
+          "count",
+          "current_count",
+          "has_more"
+        ]
+      },
+      "CandidatePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/Candidate"
+          },
+          "domain_counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DomainSummary"
+            }
+          }
+        },
+        "required": [
+          "candidate",
+          "domain_counts"
+        ]
+      },
+      "BatchPreviewEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 19,
+            "description": "Zero-based index corresponding to the input values array without echoing raw lead text."
+          },
+          "candidates": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/CandidatePreview"
+            }
+          },
+          "has_more_candidates": {
+            "type": "boolean",
+            "description": "True when additional candidates existed beyond the per-lead or batch processing budget."
+          }
+        },
+        "required": [
+          "index",
+          "candidates",
+          "has_more_candidates"
+        ]
+      },
+      "BatchPreviewResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/BatchPreviewEntry"
+            }
+          },
+          "unavailable_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the overall batch candidate (50) or record (700) budget stopped further probing."
+          }
+        },
+        "required": [
+          "entries",
+          "unavailable_domains",
+          "truncated"
         ]
       }
     },
