@@ -90,6 +90,7 @@ export interface components {
         AuditFilter: {
             scope: components["schemas"]["Scope"];
             purpose: string;
+            /** @description Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page. */
             after: string;
             limit: number;
         };

@@ -40,81 +40,43 @@ func (r Repository) Migrate(ctx context.Context) error {
 	return nil
 }
 
-func addDim(dst *[]string, v string) {
-	if v != "" && v != "*" && !slices.Contains(*dst, v) {
-		*dst = append(*dst, v)
-	}
-}
-
-func collectDimensions(a iq.Audit) (schools, groups, modules []string) {
-	schools, groups, modules = []string{}, []string{}, []string{}
-	recordScope := func(sc admin.Scope) {
-		addDim(&schools, sc.School)
-		addDim(&groups, sc.Group)
-		addDim(&modules, sc.Module)
-	}
-	recordScope(a.Scope)
-	for _, sc := range a.Scopes {
-		recordScope(sc)
-	}
-	for _, list := range a.TargetScopes {
-		for _, sc := range list {
-			recordScope(sc)
-		}
-	}
-	return schools, groups, modules
-}
-
-func targetInScope(filter admin.Scope, fallback admin.Scope, scopes []admin.Scope) bool {
-	if len(scopes) == 0 {
-		_, ok := filter.Intersection(fallback)
-		return ok
-	}
-	schoolOK := filter.School == "*"
-	groupOK := filter.Group == "*"
-	moduleOK := filter.Module == "*"
-	for _, sc := range scopes {
-		if !schoolOK && sc.School == filter.School {
-			schoolOK = true
-		}
-		if !groupOK && sc.Group == filter.Group {
-			groupOK = true
-		}
-		if !moduleOK && (sc.Module == "*" || sc.Module == filter.Module) {
-			moduleOK = true
-		}
-	}
-	return schoolOK && groupOK && moduleOK
-}
-
 func (r Repository) Append(ctx context.Context, a iq.Audit) error {
 	if r.Pool == nil {
 		return iq.ErrUnavailable
 	}
-	schools, groups, modules := collectDimensions(a)
-	targetScopes := a.TargetScopes
-	if targetScopes == nil {
-		targetScopes = map[string][]admin.Scope{}
+	extra := slices.Clone(a.Scopes)
+	for _, scopes := range a.TargetScopes {
+		extra = append(extra, scopes...)
 	}
-	tsBytes, e := json.Marshal(targetScopes)
-	if e != nil {
-		return e
+	body, err := json.Marshal(a)
+	if err != nil {
+		return err
 	}
-	b, e := json.Marshal(a)
-	if e != nil {
-		return e
+	targets, err := json.Marshal(a.TargetScopes)
+	if err != nil {
+		return err
 	}
-	_, e = r.Pool.Exec(
-		ctx,
-		`INSERT INTO information_query.audit(school,group_id,module,schools,groups,modules,target_scopes,body,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		a.Scope.School, a.Scope.Group, a.Scope.Module, schools, groups, modules, tsBytes, b, a.CreatedAt,
+	scopes, err := json.Marshal(append([]admin.Scope{}, extra...))
+	if err != nil {
+		return err
+	}
+	_, err = r.Pool.Exec(ctx, `WITH entry AS (
+		INSERT INTO information_query.audit(school,group_id,module,body,created_at,target_scopes)
+		VALUES($1,$2,$3,$4,$5,$6) RETURNING id
 	)
-	return e
+	INSERT INTO information_query.audit_scopes(id,school,group_id,module)
+	SELECT DISTINCT entry.id,s.school,s."group",s.module FROM entry
+	CROSS JOIN jsonb_to_recordset($7::jsonb) AS s(school text,"group" text,module text)
+	WHERE (s.school,s."group",s.module) <> ($1,$2,$3)`, a.Scope.School, a.Scope.Group, a.Scope.Module, body, a.CreatedAt, targets, scopes)
+	return err
 }
 
 func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPage, err error) {
 	if r.Pool == nil {
 		return out, iq.ErrUnavailable
+	}
+	if f.Limit < 1 || f.Limit > 100 {
+		return out, iq.ErrInvalid
 	}
 	conds := make([]string, 0, 4)
 	args := make([]any, 0, 5)
@@ -130,20 +92,28 @@ func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPag
 		add("id < $%d", after)
 	}
 	if f.Scope.School != "*" {
-		add("schools @> ARRAY[$%d]::text[]", f.Scope.School)
+		add("school = $%d", f.Scope.School)
 	}
 	if f.Scope.Group != "*" {
-		add("groups @> ARRAY[$%d]::text[]", f.Scope.Group)
+		add("group_id = $%d", f.Scope.Group)
 	}
 	if f.Scope.Module != "*" {
-		add("modules @> ARRAY[$%d]::text[]", f.Scope.Module)
+		add("module = $%d", f.Scope.Module)
 	}
-	args = append(args, f.Limit)
-	query := `SELECT id,body,target_scopes FROM information_query.audit`
+	args = append(args, f.Limit+1)
+	limit := fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", len(args))
+	where := ""
 	if len(conds) > 0 {
-		query += " WHERE " + strings.Join(conds, " AND ")
+		where = " WHERE " + strings.Join(conds, " AND ")
 	}
-	query += fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", len(args))
+	query := `SELECT id,body,target_scopes FROM information_query.audit` + where + limit
+	if f.Scope != admin.Global {
+		// Cap each ordered input before merging. An audit may match multiple observed scopes.
+		base := `SELECT id FROM information_query.audit` + where + limit
+		extra := `SELECT DISTINCT id FROM information_query.audit_scopes` + where + limit
+		query = `WITH page AS ((` + base + `) UNION (` + extra + `)` + limit + `)
+			SELECT a.id,a.body,a.target_scopes FROM page JOIN information_query.audit a USING(id) ORDER BY a.id DESC`
+	}
 	rows, err := r.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return out, err
@@ -160,22 +130,26 @@ func (r Repository) Read(ctx context.Context, f iq.AuditFilter) (out iq.AuditPag
 		if err = json.Unmarshal(b, &a); err != nil {
 			return out, err
 		}
-		if f.Scope != admin.Global && len(a.Targets) > 0 && len(tsBytes) > 0 {
-			var ts map[string][]admin.Scope
-			if json.Unmarshal(tsBytes, &ts) == nil && len(ts) > 0 {
-				filtered := make([]string, 0, len(a.Targets))
-				for _, target := range a.Targets {
-					if targetInScope(f.Scope, a.Scope, ts[target]) {
-						filtered = append(filtered, target)
-					}
-				}
-				a.Targets = filtered
+		if f.Scope != admin.Global && len(a.Targets) > 0 {
+			var targets map[string][]admin.Scope
+			if err = json.Unmarshal(tsBytes, &targets); err != nil {
+				return out, err
 			}
+			filtered := make([]string, 0, len(a.Targets))
+			for _, target := range a.Targets {
+				scopes := targets[target]
+				// Legacy/provider rows only have the original request scope.
+				if (len(scopes) == 0 && f.Scope.Contains(a.Scope)) || slices.ContainsFunc(scopes, f.Scope.Contains) {
+					filtered = append(filtered, target)
+				}
+			}
+			a.Targets = filtered
 		}
 		a.ID = strconv.FormatInt(id, 10)
 		out.Items = append(out.Items, a)
 	}
-	if len(out.Items) == f.Limit {
+	if len(out.Items) > f.Limit {
+		out.Items = out.Items[:f.Limit]
 		out.NextCursor = out.Items[len(out.Items)-1].ID
 	}
 	return out, rows.Err()

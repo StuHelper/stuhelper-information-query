@@ -7,6 +7,7 @@ import (
 	"github.com/StuHelper/stuhelper-information-query/postgres"
 	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/admin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
 	"strconv"
@@ -34,7 +35,7 @@ func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 	if e = r.Migrate(ctx); e != nil {
 		t.Fatal("migration replay", e)
 	}
-	_, e = pool.Exec(ctx, `CREATE ROLE iq_runtime NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_runtime; GRANT SELECT,INSERT ON information_query.audit TO iq_runtime; GRANT USAGE ON SEQUENCE information_query.audit_id_seq TO iq_runtime; CREATE SCHEMA foreign_module; CREATE TABLE foreign_module.secret(value text);`)
+	_, e = pool.Exec(ctx, `CREATE ROLE iq_runtime NOLOGIN; GRANT USAGE ON SCHEMA information_query TO iq_runtime; GRANT SELECT,INSERT ON information_query.audit, information_query.audit_scopes TO iq_runtime; GRANT USAGE ON SEQUENCE information_query.audit_id_seq TO iq_runtime; CREATE SCHEMA foreign_module; CREATE TABLE foreign_module.secret(value text);`)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -75,11 +76,25 @@ func TestIsolatedAuditPersistenceAndRuntimePrivileges(t *testing.T) {
 	if e != nil || len(page.Items) != 0 {
 		t.Fatal("scope leak", e)
 	}
-	for _, sql := range []string{`SELECT * FROM foreign_module.secret`, `DELETE FROM information_query.audit`, `UPDATE information_query.audit SET school='b'`, `CREATE TABLE information_query.forbidden(id int)`} {
+	for _, sql := range []string{`SELECT * FROM foreign_module.secret`, `DELETE FROM information_query.audit_scopes`, `DELETE FROM information_query.audit`, `UPDATE information_query.audit SET school='b'`, `CREATE TABLE information_query.forbidden(id int)`} {
 		if _, e = runtime.Exec(ctx, sql); e == nil {
 			t.Fatalf("runtime accepted %s", sql)
 		}
 	}
+	// Scope indexing and the audit body must commit together.
+	if _, e = pool.Exec(ctx, `REVOKE INSERT ON information_query.audit_scopes FROM iq_runtime`); e != nil {
+		t.Fatal(e)
+	}
+	a.RequestID = "must-roll-back"
+	a.Scopes = []admin.Scope{admin.Global}
+	if e = r.Append(ctx, a); e == nil {
+		t.Fatal("scope index write should fail")
+	}
+	var count int
+	if e = pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE body->>'request_id'='must-roll-back'`).Scan(&count); e != nil || count != 0 {
+		t.Fatalf("partial audit: count=%d err=%v", count, e)
+	}
+
 }
 
 type allow struct{}
@@ -301,6 +316,10 @@ func TestAuditDescendingPaginationTerminatesUnderSelfAudit(t *testing.T) {
 		}
 		after = page.NextCursor
 	}
+	var ownAudits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_query.audit WHERE school=$1 AND body->>'action'='audit.query'`, sc.School).Scan(&ownAudits); err != nil || ownAudits != 2 {
+		t.Fatal("self audit count", ownAudits, err)
+	}
 	if len(purposes) != 2 || purposes[0] != "second-entry" || purposes[1] != "first-entry" {
 		t.Fatalf("expected newest-first [second-entry first-entry], got %v", purposes)
 	}
@@ -451,6 +470,12 @@ func TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction(t *testing.T
 		t.Fatalf("billing module auditor missed multi-domain query: %+v err=%v", billingPage, err)
 	}
 
+	// Restrictions have to match one observed scope.
+	mixed, err := r.Read(ctx, iq.AuditFilter{Scope: admin.Scope{School: schoolA, Group: groupB, Module: "billing"}, Limit: 10})
+	if err != nil || len(mixed.Items) != 0 {
+		t.Fatalf("unrelated tuple matched: %d rows, %v", len(mixed.Items), err)
+	}
+
 	// Unrelated school-C auditor must see 0 records.
 	schoolCPage, err := r.Read(ctx, iq.AuditFilter{
 		Scope: admin.Scope{School: schoolC, Group: "*", Module: "*"},
@@ -467,7 +492,12 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 		t.Skip("isolated PostgreSQL DSN required")
 	}
 	ctx := context.Background()
-	pool, e := pgxpool.New(ctx, dsn)
+	cfg, e := pgxpool.ParseConfig(dsn)
+	if e != nil {
+		t.Fatal(e)
+	}
+	cfg.MaxConns = 1
+	pool, e := pgxpool.NewWithConfig(ctx, cfg)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -480,7 +510,7 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 	noiseSchool := "a12-noise-school-" + nonce
 	targetSchool := "a12-target-school-" + nonce
 	for i := 0; i < 400; i++ {
-		sc := admin.Scope{School: noiseSchool, Group: "*", Module: "profiles"}
+		sc := admin.Scope{School: noiseSchool + strconv.Itoa(i), Group: "*", Module: "profiles"}
 		if i == 250 {
 			sc.School = targetSchool
 		}
@@ -489,6 +519,7 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 			RequestID: "r",
 			Purpose:   "p",
 			Scope:     sc,
+			Scopes:    []admin.Scope{{School: "extra-" + sc.School, Group: "*", Module: "profiles"}},
 			Channel:   "admin",
 			Action:    "query",
 			Result:    "success",
@@ -500,7 +531,7 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	if _, e = pool.Exec(ctx, `ANALYZE information_query.audit`); e != nil {
+	if _, e = pool.Exec(ctx, `ANALYZE information_query.audit; ANALYZE information_query.audit_scopes`); e != nil {
 		t.Fatal(e)
 	}
 	page, e := r.Read(ctx, iq.AuditFilter{
@@ -518,9 +549,13 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 	if _, e = conn.Exec(ctx, `SET plan_cache_mode = force_generic_plan`); e != nil {
 		t.Fatal(e)
 	}
-	rows, e := conn.Query(ctx, `EXPLAIN (FORMAT TEXT) SELECT id,body,target_scopes FROM information_query.audit WHERE schools @> ARRAY[$1]::text[] ORDER BY id DESC LIMIT $2`, targetSchool, 10)
+	var statement string
+	if e = conn.QueryRow(ctx, `SELECT name FROM pg_prepared_statements WHERE statement LIKE 'WITH page AS (%' LIMIT 1`).Scan(&statement); e != nil {
+		t.Fatal(e)
+	}
+	rows, e := conn.Query(ctx, "EXPLAIN EXECUTE "+pgx.Identifier{statement}.Sanitize()+"('school', 10)")
 	if e != nil {
-		t.Fatal("expected indexed schools column query:", e)
+		t.Fatal("explaining repository scope query:", e)
 	}
 	var plan strings.Builder
 	for rows.Next() {
@@ -531,7 +566,7 @@ func TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate(t *testing.T) {
 		plan.WriteString(line + "\n")
 	}
 	rows.Close()
-	if !strings.Contains(plan.String(), "audit_schools_gin") {
-		t.Fatalf("expected generic plan to use audit_schools_gin, got:\n%s", plan.String())
+	if !strings.Contains(plan.String(), "audit_school_page") || !strings.Contains(plan.String(), "audit_scopes_school_page") {
+		t.Fatalf("expected ordered school indexes for request and observed scopes, got:\n%s", plan.String())
 	}
 }

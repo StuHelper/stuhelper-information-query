@@ -43,7 +43,9 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
 
-用迁移身份执行 postgres.Repository.Migrate。迁移定义审计表及涉及的学校、群、模块数组列与目标范围映射，建立降序和 GIN 索引。运行身份仅授予 schema 的 USAGE、audit 的 SELECT/INSERT、audit_id_seq 的 USAGE；连接池为空时返回 ErrUnavailable。
+用迁移身份执行 postgres.Repository.Migrate。运行身份需要 schema 的 USAGE、audit 和 audit_scopes 的 SELECT、INSERT，以及 audit_id_seq 的 USAGE。范围明细与审计正文在同一语句提交，删除审计时级联清理明细。连接池为空时返回 ErrUnavailable。
+
+旧记录按请求范围可见。新记录同时保存实际范围，每组学校、群、模块作为整体匹配。学校、群及模块的分页索引按审计 ID 排序，读取时裁剪范围外目标。
 
 每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。审计读取按 ID 降序分页，按实际涉及的学校、群与模块匹配，并为受限范围审计员裁剪范围外的目标标识。
 
