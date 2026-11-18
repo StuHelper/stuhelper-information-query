@@ -21,6 +21,8 @@ var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rej
 var auditResults = []string{"success", "denied", "invalid_request", "unauthenticated", "unavailable"}
 
 type Service struct {
+	// CursorKey may be shared by replicas. A nil key uses this process's ephemeral key.
+	CursorKey  *[32]byte
 	Auth       Authorizer
 	Repo       Repository
 	Resolvers  map[string]Resolver // name/student_id: verification; qq: qq-binding

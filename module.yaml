@@ -57,6 +57,9 @@ scenario_tests:
   IQ-09:
     - resolver_test.go#TestResolverFailureAndIsolation
   IQ-10:
+    - cursor_test.go#TestCursorAuthenticityAndEquivalentSelections
+    - cursor_test.go#TestConfiguredCursorKeyAcrossReplicas
+    - cursor_test.go#TestResolverPositionValidatedBeforeContinuation
     - resolver_test.go#TestCompositePagination
     - resolver_test.go#TestCandidateChangeAndWorkBound
   IQ-11:
