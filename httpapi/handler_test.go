@@ -23,11 +23,13 @@ import (
 func TestStrictHTTPAndTrustedIdentity(t *testing.T) {
 	spec := loadOpenAPI(t)
 	h := httpapi.Handler{Service: &iq.Service{Repo: &auditRepo{}}, Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
-		return account.Principal{}, iq.Delivery{Channel: "admin"}, "req"
+		return account.Principal{Issuer: "test", Subject: "operator"}, iq.Delivery{Channel: "admin"}, "req"
 	}}
 	for _, body := range []string{`{"actor":"admin"}`, `{} {}`, strings.Repeat("x", 17000)} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/information-query/query", strings.NewReader(body)))
+		r := httptest.NewRequest("POST", "/api/v1/information-query/query", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(w, r)
 		if w.Code != 400 || w.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal(w.Code, w.Body.String())
 		}
@@ -67,7 +69,7 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	}
 	prov := fixedProvider{items: []iq.Record{{
 		ID:        "profiles:1",
-		Subject:   "issuer:alice",
+		Subject:   (account.Principal{Issuer: "issuer", Subject: "alice"}).Key(),
 		Scope:     admin.Scope{School: "buaa", Group: "*", Module: "profiles"},
 		Source:    "profiles",
 		Current:   true,
@@ -110,7 +112,7 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	// 1. 200 OK on /query via generated SDK + strict OpenAPI validation.
 	qResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
 		Kind:    sdk.Account,
-		Value:   "issuer:alice",
+		Value:   (account.Principal{Issuer: "issuer", Subject: "alice"}).Key(),
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Domains: []sdk.QueryDomains{sdk.Profiles, sdk.Verification},
 		Purpose: "核查账号资料",
@@ -151,7 +153,7 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if botAuditResp.StatusCode() != 403 || len(repo.items) != beforeRejectCount+1 || repo.items[len(repo.items)-1].Result != "forbidden" {
+	if botAuditResp.StatusCode() != 403 || len(repo.items) != beforeRejectCount+1 || repo.items[len(repo.items)-1].Result != "denied" || repo.items[len(repo.items)-1].Action != "audit.rejected" {
 		t.Fatalf("expected 403 and recorded rejection for bot audit access, got status=%d audits=%d", botAuditResp.StatusCode(), len(repo.items))
 	}
 	assertOpenAPISchema(t, spec, "Error", botAuditResp.Body)
@@ -160,7 +162,7 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	currentDelivery = iq.Delivery{Channel: "admin"}
 	forbResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
 		Kind:    sdk.Account,
-		Value:   "issuer:alice",
+		Value:   (account.Principal{Issuer: "issuer", Subject: "alice"}).Key(),
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Domains: []sdk.QueryDomains{sdk.Billing},
 		Purpose: "无权查账务",
@@ -178,7 +180,7 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	currentPrincipal = account.Principal{}
 	unauthResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
 		Kind:    sdk.Account,
-		Value:   "issuer:alice",
+		Value:   (account.Principal{Issuer: "issuer", Subject: "alice"}).Key(),
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Domains: []sdk.QueryDomains{sdk.Profiles},
 		Purpose: "匿名请求",
@@ -197,7 +199,7 @@ func TestHTTPEndpointsStatusCodesAndOpenAPIContract(t *testing.T) {
 	repo.fail = true
 	unavailResp, err := client.QueryInformationWithResponse(context.Background(), sdk.Query{
 		Kind:    sdk.Account,
-		Value:   "issuer:alice",
+		Value:   (account.Principal{Issuer: "issuer", Subject: "alice"}).Key(),
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Domains: []sdk.QueryDomains{sdk.Profiles},
 		Purpose: "审计离线",
