@@ -47,7 +47,9 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 提供方使用所属包的 DTO，backend 负责转换，不依赖 information-query。查询依赖均为可选依赖，缺失影响对应解析或业务域。模块仅保存审计，不读取其他模块的数据库。真实适配器与 backend 装配需由对应任务完成。
 
-用迁移身份执行 postgres.Repository.Migrate。运行身份需要 schema 的 USAGE、audit 和 audit_scopes 的 SELECT、INSERT，以及 audit_id_seq 的 USAGE。范围明细与审计正文在同一语句提交，删除审计时级联清理明细。连接池为空时返回 ErrUnavailable。
+用迁移身份执行 postgres.Repository.Migrate。迁移在 information_query.schema_migrations 记录已执行版本，每个未执行脚本都在独立事务内原子执行。
+
+运行身份需要 schema 的 USAGE、audit 和 audit_scopes 的 SELECT、INSERT，以及 audit_id_seq 的 USAGE。范围明细与审计正文在同一语句提交，删除审计时级联清理明细。连接池为空时返回 ErrUnavailable。
 
 旧记录按请求范围可见。新记录同时保存实际范围，每组学校、群、模块作为整体匹配。学校、群及模块的分页索引按审计 ID 排序，读取时裁剪范围外目标。
 
@@ -74,6 +76,8 @@ HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。
 每次 Query 对同一操作者、能力和完整范围只执行一次成功的编排层授权检查。不同学校、群和模块分别检查，每次翻页重新授权。各域 Provider 继续独立授权。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。退款收款字段类别使用 refund_payee，权限名保留 refund.read。
 
 每次查询、拒绝和审计查询保存操作者、请求 ID、用途、范围、字段类别、权限依据、目标内部标识、时间、数量、结果与渠道。用途支持换行和制表符，最多 512 个 Unicode 码点；审计仅记录申请或实际明文披露的敏感类别，无权拒绝统一记为 denied，落盘前清洗非法范围、控制字符与空切片。候选与敏感结果在审计写入成功后返回，写入失败返回 503。群聊查询额外记录目标群标识。
+
+AuditFilter.purpose 记录管理员本次查阅审计日志的事由并写入对应的 audit.query 审计行，不作为历史审计记录的 SQL 过滤条件。审计读取仅按 Scope、游标与分页参数执行。
 
 ## 审计保留与维护
 
