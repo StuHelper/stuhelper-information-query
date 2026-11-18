@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
 )
 
 // Defines values for FieldCategory.
@@ -564,6 +566,11 @@ type ClientWithResponsesInterface interface {
 	QueryInformationWithResponse(ctx context.Context, body QueryInformationJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationResponse, error)
 }
 
+// QueryInformationAuditResponse405Headers the declared response headers of an HTTP 405 response for QueryInformationAudit
+type QueryInformationAuditResponse405Headers struct {
+	Allow *string
+}
+
 type QueryInformationAuditResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -575,8 +582,16 @@ type QueryInformationAuditResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON405 the response for an HTTP 405 `application/json` response
+	JSON405 *Error
+	// JSON415 the response for an HTTP 415 `application/json` response
+	JSON415 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
+	// Headers405 the parsed response headers for an HTTP 405 response
+	Headers405 *QueryInformationAuditResponse405Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -597,6 +612,21 @@ func (r QueryInformationAuditResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r QueryInformationAuditResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON405 returns the response for an HTTP 405 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON405() *Error {
+	return r.JSON405
+}
+
+// GetJSON415 returns the response for an HTTP 415 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON415() *Error {
+	return r.JSON415
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -633,6 +663,11 @@ func (r QueryInformationAuditResponse) ContentType() string {
 	return ""
 }
 
+// QueryInformationResponse405Headers the declared response headers of an HTTP 405 response for QueryInformation
+type QueryInformationResponse405Headers struct {
+	Allow *string
+}
+
 type QueryInformationResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -644,8 +679,16 @@ type QueryInformationResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON405 the response for an HTTP 405 `application/json` response
+	JSON405 *Error
+	// JSON415 the response for an HTTP 415 `application/json` response
+	JSON415 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
+	// Headers405 the parsed response headers for an HTTP 405 response
+	Headers405 *QueryInformationResponse405Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -666,6 +709,21 @@ func (r QueryInformationResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r QueryInformationResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r QueryInformationResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON405 returns the response for an HTTP 405 `application/json` response
+func (r QueryInformationResponse) GetJSON405() *Error {
+	return r.JSON405
+}
+
+// GetJSON415 returns the response for an HTTP 415 `application/json` response
+func (r QueryInformationResponse) GetJSON415() *Error {
+	return r.JSON415
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -796,6 +854,27 @@ func ParseQueryInformationAuditResponse(rsp *http.Response) (*QueryInformationAu
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON415 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -803,6 +882,19 @@ func ParseQueryInformationAuditResponse(rsp *http.Response) (*QueryInformationAu
 		}
 		response.JSON503 = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 405:
+		var headers QueryInformationAuditResponse405Headers
+		if values := rsp.Header.Values("Allow"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Allow", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Allow = &value
+		}
+		response.Headers405 = &headers
 	}
 
 	return response, nil
@@ -850,6 +942,27 @@ func ParseQueryInformationResponse(rsp *http.Response) (*QueryInformationRespons
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON415 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -857,6 +970,19 @@ func ParseQueryInformationResponse(rsp *http.Response) (*QueryInformationRespons
 		}
 		response.JSON503 = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 405:
+		var headers QueryInformationResponse405Headers
+		if values := rsp.Header.Values("Allow"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Allow", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Allow = &value
+		}
+		response.Headers405 = &headers
 	}
 
 	return response, nil

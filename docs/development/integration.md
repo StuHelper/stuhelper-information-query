@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -47,7 +47,9 @@ Service.Providers 按业务域装配。Provider 仅接收 kind=account 与完整
 
 Service.Auth 注入平台 admin.Service，Providers 与 Resolvers 在启动后保持不可变。HTTP 可信中间件构造 Principal、请求 ID、Delivery。机器人适配器从已验证发信账号及会话构造渠道，BotEnabled 默认关闭。
 
-HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。查询整体限时 10 秒，审计提交独立限时 3 秒。依赖须遵守 context；原始线索、正文和敏感结果不得进入日志。
+HTTP 先验证登录态，再检查渠道和媒体类型。匿名请求返回 401，无审计写入。POST 仅接受 application/json，可带 charset 参数。415、404、405 均返回 JSON，405 携带 Allow: POST。
+
+HTTP 限制正文 16 KiB，拒绝未知字段及尾随 JSON，响应 no-store。已登录请求的解析和渠道拒绝按入口写一条审计。查询整体限时 10 秒，审计提交独立限时 3 秒。依赖须遵守 context；原始线索、正文和敏感结果不得进入日志。
 
 ## 权限与审计
 
