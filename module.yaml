@@ -31,6 +31,7 @@ scenario_tests:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-02:
     - service_test.go#TestScopeAndDomainIsolation
+    - postgres/repository_test.go#TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction
   IQ-03:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-04:
@@ -41,8 +42,11 @@ scenario_tests:
   IQ-06:
     - service_test.go#TestSensitiveMaskAuditAndFailure
     - postgres/repository_test.go#TestIsolatedAuditPersistenceAndRuntimePrivileges
+    - postgres/repository_test.go#TestAuditDescendingPaginationTerminatesUnderSelfAudit
+    - postgres/repository_test.go#TestAuditSelectiveScopeUsesIndexWithoutWildcardOrPredicate
   IQ-07:
     - postgres/repository_test.go#TestSensitiveResponseRequiresCommittedAudit
+    - postgres/repository_test.go#TestNilPoolReturnsUnavailable
     - service_test.go#TestSensitiveMaskAuditAndFailure
   IQ-08:
     - service_test.go#TestBotDefaultAndGroupDelivery

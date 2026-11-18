@@ -143,6 +143,7 @@ type Audit struct {
 
 // AuditFilter defines model for AuditFilter.
 type AuditFilter struct {
+	// After Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page.
 	After   string `json:"after"`
 	Limit   int    `json:"limit"`
 	Purpose string `json:"purpose"`
