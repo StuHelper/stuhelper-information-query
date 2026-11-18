@@ -157,7 +157,9 @@ type AuditPage struct {
 
 // Candidate defines model for Candidate.
 type Candidate struct {
-	Account   string    `json:"account"`
+	Account string `json:"account"`
+
+	// ChangedAt For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time.
 	ChangedAt time.Time `json:"changed_at"`
 	Current   bool      `json:"current"`
 

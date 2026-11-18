@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-09
+updated: 2026-11-18
 ---
 
 # 信息查询装配与实施状态
@@ -17,7 +17,7 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、qq、account。stu
 
 0.2.0 具有不兼容变化：subject 改为 account，student_number 改为 student_id，退款收款字段类别改为 refund_payee，平铺 items 改为 groups。消费者需重新生成 SDK，更新分组展示并清除旧游标。两个 HTTP 路径保持不变。
 
-同名候选分开展示，同一账号的不同来源或历史绑定也保持独立。历史绑定 current=false，显示来源和变更时间。account 直接形成一个候选，source=account、current=true，changed_at 为请求时间，不作为绑定事实。
+同名候选分开展示，同一账号的不同来源或历史绑定也保持独立。历史绑定 current=false，显示来源和变更时间。account 直接形成一个候选，source=account、current=true，changed_at 取首页请求时间，在同一续页链保持一致。首次出现的空候选正常展示，已展示候选在续页耗尽时直接前进到下一候选，审计只记录本页展示的目标。
 
 每页最多返回 100 条业务记录、50 个候选。after 是组合游标，绑定请求人和查询条件，保存候选位置与业务记录位置。游标只在来源事实稳定时保证排他连续性；续页重查授权，候选事实改变返回 503，调用方从首页重新查询。
 

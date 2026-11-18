@@ -49,6 +49,8 @@ scenario_tests:
   IQ-09:
     - resolver_test.go#TestResolverFailureAndIsolation
   IQ-10:
+    - candidate_page_test.go#TestContinuationKeepsGroupIdentityAndSkipsExhaustedTarget
+    - candidate_page_test.go#TestExhaustedGroupAdvancesToNextCandidate
     - resolver_test.go#TestCompositePagination
     - resolver_test.go#TestCandidateChangeAndWorkBound
   IQ-11:
