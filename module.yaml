@@ -39,6 +39,9 @@ scenario_tests:
     - resolver_test.go#TestResolverFailureAndIsolation
     - service_test.go#TestScopeAndDomainIsolation
     - httpapi/handler_test.go#TestStructuredErrorReasonsAndNoSecretEcho
+    - service_test.go#TestOperatorCapabilitiesPreflight
+    - httpapi/handler_test.go#TestCapabilitiesEndpointSDKIntegration
+    - httpapi/handler_test.go#TestMalformedCapabilitiesBypassAudit
   IQ-05:
     - httpapi/request_test.go#TestRequestBoundariesAndRejectionAudit
     - service_test.go#TestBotDefaultAndGroupDelivery

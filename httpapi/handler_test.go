@@ -519,3 +519,76 @@ func TestStructuredErrorReasonsAndNoSecretEcho(t *testing.T) {
 		})
 	}
 }
+
+func TestCapabilitiesEndpointSDKIntegration(t *testing.T) {
+	actor := account.Principal{Issuer: "issuer", Subject: "moderator"}
+	svc := &iq.Service{
+		Auth:       capAuth{"information-query.reviews.read": true, "information-query.audit.read": true},
+		Repo:       nil,
+		Providers:  map[string]iq.Provider{"reviews": emptyProvider{}, "profiles": emptyProvider{}},
+		BotEnabled: true,
+	}
+	srv := httptest.NewServer(httpapi.Handler{
+		Service: svc,
+		Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+			return actor, iq.Delivery{Channel: "admin"}, "req-cap"
+		},
+	})
+	defer srv.Close()
+
+	client, err := sdk.NewClientWithResponses(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.QueryInformationCapabilitiesWithResponse(context.Background(), sdk.CapabilitiesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil {
+		t.Fatalf("status=%d body=%s", resp.StatusCode(), string(resp.Body))
+	}
+	got := resp.JSON200
+	if got.Scope.School != "*" || len(got.AllowedDomains) != 1 || got.AllowedDomains[0] != sdk.CapabilitiesAllowedDomainsReviews || !got.AuditReadable || got.BotEnabled {
+		t.Fatalf("unexpected capabilities payload: %+v", got)
+	}
+	if len(got.AvailableDomains) != 2 || len(got.AvailableKinds) != 1 || got.AvailableKinds[0] != sdk.CapabilitiesAvailableKindsAccount {
+		t.Fatalf("unexpected available domains/kinds: %+v", got)
+	}
+}
+
+type capAuth map[string]bool
+
+func (m capAuth) Evaluate(_ context.Context, p account.Principal, cap string, _ admin.Scope) error {
+	if !p.Valid() {
+		return iq.ErrUnauthenticated
+	}
+	if m[cap] {
+		return nil
+	}
+	return iq.ErrForbidden
+}
+
+type emptyProvider struct{}
+
+func (emptyProvider) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
+	return []iq.Record{}, nil
+}
+
+func TestMalformedCapabilitiesBypassAudit(t *testing.T) {
+	store := &auditRepo{fail: true}
+	h := httpapi.Handler{Service: &iq.Service{Repo: store}, Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
+		return account.Principal{Issuer: "test", Subject: "operator"}, iq.Delivery{Channel: "admin"}, "request"
+	}}
+	for _, tc := range []struct {
+		media, body string
+		status      int
+	}{{"application/json", `{"unknown":true}`, 400}, {"text/plain", "{}", 415}} {
+		req := httptest.NewRequest("POST", "/api/v1/information-query/capabilities", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", tc.media)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != tc.status || len(store.items) != 0 {
+			t.Fatalf("status=%d audits=%d", w.Code, len(store.items))
+		}
+	}
+}

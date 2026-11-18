@@ -452,6 +452,128 @@ func (s Service) reject(ctx context.Context, p account.Principal, id string, d D
 	return s.finish(ctx, a, cause)
 }
 
+func (s Service) checkCapability(ctx context.Context, p account.Principal, cap string, scope admin.Scope) (bool, error) {
+	if s.Auth == nil {
+		return false, ErrUnavailable
+	}
+	e := s.Auth.Evaluate(ctx, p, cap, scope)
+	if e == nil {
+		return true, nil
+	}
+	if errors.Is(e, ErrForbidden) {
+		return false, nil
+	}
+	if errors.Is(e, ErrUnauthenticated) {
+		return false, ErrUnauthenticated
+	}
+	return false, ErrUnavailable
+}
+
+// Capabilities evaluates read-only domain, field, audit, and assembly metadata
+// for the current principal without appending query audit entries.
+func (s Service) Capabilities(ctx context.Context, p account.Principal, d Delivery, req CapabilitiesRequest) (out Capabilities, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if !p.Valid() {
+		return out, ErrUnauthenticated
+	}
+	if !validDelivery(d) {
+		return out, ErrInvalid
+	}
+	scope := admin.Global
+	if req.Scope != nil {
+		if !scopeOK(*req.Scope) {
+			return out, ErrInvalid
+		}
+		scope = *req.Scope
+	}
+	if s.Auth == nil {
+		return out, ErrUnavailable
+	}
+	if d.Channel != "admin" {
+		if !s.BotEnabled {
+			return out, ErrForbidden
+		}
+		ok, e := s.checkCapability(ctx, p, "information-query.bot", scope)
+		if e != nil {
+			return out, e
+		}
+		if !ok {
+			return out, ErrForbidden
+		}
+	}
+	out = Capabilities{
+		Scope:            scope,
+		AllowedDomains:   []string{},
+		AllowedFields:    []string{},
+		AvailableDomains: []string{},
+		AvailableKinds:   []string{},
+	}
+	for _, domain := range domains {
+		if s.Providers[domain] != nil {
+			out.AvailableDomains = append(out.AvailableDomains, domain)
+		}
+		domainScope := scope
+		domainScope.Module = domain
+		if !scope.Contains(domainScope) {
+			continue
+		}
+		ok, e := s.checkCapability(ctx, p, "information-query."+domain+".read", domainScope)
+		if e != nil {
+			return Capabilities{}, e
+		}
+		if ok {
+			out.AllowedDomains = append(out.AllowedDomains, domain)
+		}
+	}
+	for _, category := range categories {
+		capName := "information-query." + fieldCapability(category) + ".read"
+		ok, e := s.checkCapability(ctx, p, capName, scope)
+		if e != nil {
+			return Capabilities{}, e
+		}
+		if !ok && scope.Module == "*" && len(out.AllowedDomains) > 0 {
+			allAllowed := true
+			for _, domain := range out.AllowedDomains {
+				domainScope := scope
+				domainScope.Module = domain
+				domainOK, de := s.checkCapability(ctx, p, capName, domainScope)
+				if de != nil {
+					return Capabilities{}, de
+				}
+				if !domainOK {
+					allAllowed = false
+					break
+				}
+			}
+			ok = allAllowed
+		}
+		if ok {
+			out.AllowedFields = append(out.AllowedFields, category)
+		}
+	}
+	for _, kind := range []string{"name", "student_id", "qq", "account"} {
+		if kind == "account" || s.Resolvers[kind] != nil {
+			out.AvailableKinds = append(out.AvailableKinds, kind)
+		}
+	}
+	if d.Channel == "admin" {
+		ok, e := s.checkCapability(ctx, p, "information-query.audit.read", scope)
+		if e != nil {
+			return Capabilities{}, e
+		}
+		out.AuditReadable = ok
+	}
+	if s.BotEnabled {
+		ok, e := s.checkCapability(ctx, p, "information-query.bot", scope)
+		if e != nil {
+			return Capabilities{}, e
+		}
+		out.BotEnabled = ok
+	}
+	return out, nil
+}
+
 func fieldCapability(category string) string {
 	if category == "refund_payee" {
 		return "refund"

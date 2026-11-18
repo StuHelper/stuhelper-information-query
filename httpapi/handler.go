@@ -38,7 +38,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	const queryPath = "/api/v1/information-query/query"
 	const auditPath = "/api/v1/information-query/audit/query"
-	if r.URL.Path != queryPath && r.URL.Path != auditPath {
+	const capabilitiesPath = "/api/v1/information-query/capabilities"
+	if r.URL.Path != queryPath && r.URL.Path != auditPath && r.URL.Path != capabilitiesPath {
 		writeCode(w, 404, "not_found")
 		return
 	}
@@ -66,6 +67,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
+		if r.URL.Path == capabilitiesPath {
+			writeCode(w, 415, "unsupported_media_type")
+			return
+		}
 		if err = reject(r.Context(), p, id, d, iq.ErrInvalid); errors.Is(err, iq.ErrInvalid) {
 			writeCode(w, 415, "unsupported_media_type")
 		} else {
@@ -74,6 +79,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out any
+	if r.URL.Path == capabilitiesPath {
+		var q iq.CapabilitiesRequest
+		if err = decode(w, r, &q); err == nil {
+			out, err = h.Service.Capabilities(r.Context(), p, d, q)
+		}
+		write(w, out, err)
+		return
+	}
 	if r.URL.Path == auditPath {
 		var f iq.AuditFilter
 		if err = decode(w, r, &f); err == nil {

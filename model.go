@@ -161,6 +161,20 @@ type CandidateGroup struct {
 	Items     []Record  `json:"items"`
 }
 
+type CapabilitiesRequest struct {
+	Scope *admin.Scope `json:"scope,omitempty"`
+}
+
+type Capabilities struct {
+	Scope            admin.Scope `json:"scope"`
+	AllowedDomains   []string    `json:"allowed_domains"`
+	AllowedFields    []string    `json:"allowed_fields"`
+	AvailableDomains []string    `json:"available_domains"`
+	AvailableKinds   []string    `json:"available_kinds"`
+	AuditReadable    bool        `json:"audit_readable"`
+	BotEnabled       bool        `json:"bot_enabled"`
+}
+
 // Resolver filters effective scope before stable exclusive pagination (maximum 50).
 // Labels must be masked; identifiers and cursors must not contain raw lead values.
 type Resolver interface {
