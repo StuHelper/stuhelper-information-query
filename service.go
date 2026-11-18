@@ -16,8 +16,13 @@ import (
 
 var domains = []string{"profiles", "verification", "catalog", "reviews", "resources", "billing", "groups"}
 var categories = []string{"identity", "document", "material", "refund_payee"}
+var auditChannels = []string{"admin", "bot_private", "bot_group", "unknown"}
+var auditActions = []string{"query", "query.rejected", "audit.query", "audit.rejected", "provider.query"}
+var auditResults = []string{"success", "denied", "invalid_request", "unauthenticated", "unavailable"}
 
 type Service struct {
+	// CursorKey may be shared by replicas. A nil key uses this process's ephemeral key.
+	CursorKey  *[32]byte
 	Auth       Authorizer
 	Repo       Repository
 	Resolvers  map[string]Resolver // name/student_id: verification; qq: qq-binding
@@ -26,8 +31,21 @@ type Service struct {
 	Now        func() time.Time
 }
 
+func isDisallowedTextControl(r rune) bool {
+	return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t'
+}
 func clean(v string, max int) bool {
 	return v != "" && len(v) <= max && utf8.ValidString(v) && !strings.ContainsFunc(v, unicode.IsControl)
+}
+func validQueryValue(kind, value string) bool {
+	if kind == "account" {
+		_, err := account.Parse(value)
+		return err == nil
+	}
+	return utf8.ValidString(value) && value != "" && utf8.RuneCountInString(value) <= 256 && !strings.ContainsFunc(value, unicode.IsControl)
+}
+func cleanText(v string, max int) bool {
+	return v != "" && len(v) <= max*4 && utf8.ValidString(v) && utf8.RuneCountInString(v) <= max && !strings.ContainsFunc(v, isDisallowedTextControl)
 }
 func scopeOK(s admin.Scope) bool { return s.Valid() }
 func selection(v, allowed []string, min int) bool {
@@ -64,19 +82,35 @@ func (s Service) evaluate(ctx context.Context, p account.Principal, cap string, 
 	}
 	return nil
 }
+func addScope(list *[]admin.Scope, sc admin.Scope) {
+	if !slices.Contains(*list, sc) {
+		*list = append(*list, sc)
+	}
+}
+func addTargetScope(m map[string][]admin.Scope, target string, sc admin.Scope) {
+	list := m[target]
+	if !slices.Contains(list, sc) {
+		m[target] = append(list, sc)
+	}
+}
 func (s Service) start(p account.Principal, requestID, purpose, action string, scope admin.Scope, d Delivery) Audit {
-	return Audit{Actor: p.Key(), RequestID: requestID, Purpose: purpose, Action: action, Scope: scope, Channel: d.Channel, TargetGroup: d.Group, Targets: []string{}, Fields: []string{}, Basis: []string{}, CreatedAt: s.now()}
+	return Audit{Actor: p.Key(), RequestID: requestID, Purpose: purpose, Action: action, Scope: scope, Channel: d.Channel, TargetGroup: d.Group, Targets: []string{}, Fields: []string{}, Basis: []string{}, CreatedAt: s.now(), Scopes: []admin.Scope{}, TargetScopes: map[string][]admin.Scope{}}
 }
 func (s Service) finish(ctx context.Context, a Audit, err error) error {
 	a.Result = "success"
 	if err != nil {
-		a.Result = "unavailable"
-		for _, e := range []error{ErrInvalid, ErrForbidden, ErrUnauthenticated} {
-			if errors.Is(err, e) {
-				a.Result = e.Error()
-			}
+		switch {
+		case errors.Is(err, ErrForbidden):
+			a.Result = "denied"
+		case errors.Is(err, ErrInvalid):
+			a.Result = ErrInvalid.Error()
+		case errors.Is(err, ErrUnauthenticated):
+			a.Result = ErrUnauthenticated.Error()
+		default:
+			a.Result = "unavailable"
 		}
 	}
+	a = SanitizeAudit(a)
 	// A cancelled caller must not prevent recording a denial or a completed disclosure.
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
@@ -126,7 +160,7 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(q.Purpose, 512) || !clean(q.Value, 256) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
+	if !clean(id, 128) || !cleanText(q.Purpose, 512) || !validQueryValue(q.Kind, q.Value) || !scopeOK(q.Scope) || !validDelivery(d) || !selection(q.Domains, domains, 1) || !selection(q.Fields, categories, 0) || q.Limit < 1 || q.Limit > 100 || len(q.After) > 4096 || !slices.Contains([]string{"name", "student_id", "qq", "account"}, q.Kind) {
 		return out, ErrInvalid
 	}
 	if q.Kind == "student_id" && q.Scope.School == "*" {
@@ -134,6 +168,10 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 	}
 	if s.Auth != nil {
 		s.Auth = queryAuthorizer{source: s.Auth, allowed: make(map[permission]bool)}
+	}
+	a.Fields = append([]string{}, q.Fields...)
+	for _, domain := range q.Domains {
+		addScope(&a.Scopes, admin.Scope{School: q.Scope.School, Group: q.Scope.Group, Module: domain})
 	}
 	if d.Channel != "admin" {
 		if !s.BotEnabled {
@@ -143,17 +181,28 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 			return out, err
 		}
 	}
-	a.Fields = append([]string{}, q.Fields...)
 	out, err = s.resolveQuery(ctx, p, q, &a)
 	if err != nil {
 		return out, err
 	}
 	for _, group := range out.Groups {
-		a.Targets = append(a.Targets, group.Candidate.Account)
+		acct := group.Candidate.Account
+		if !slices.Contains(a.Targets, acct) {
+			a.Targets = append(a.Targets, acct)
+		}
+		addScope(&a.Scopes, group.Candidate.Scope)
+		addTargetScope(a.TargetScopes, acct, group.Candidate.Scope)
+		for _, domain := range q.Domains {
+			sc := admin.Scope{School: group.Candidate.Scope.School, Group: group.Candidate.Scope.Group, Module: domain}
+			addScope(&a.Scopes, sc)
+			addTargetScope(a.TargetScopes, acct, sc)
+		}
 		a.Count += len(group.Items)
 		for _, r := range group.Items {
+			addScope(&a.Scopes, r.Scope)
+			addTargetScope(a.TargetScopes, acct, r.Scope)
 			for _, f := range r.Fields {
-				if !slices.Contains(a.Fields, f.Category) {
+				if f.Category != "business" && !f.Masked && !slices.Contains(a.Fields, f.Category) {
 					a.Fields = append(a.Fields, f.Category)
 				}
 			}
@@ -251,7 +300,7 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 	if !p.Valid() {
 		return out, ErrUnauthenticated
 	}
-	if !clean(id, 128) || !clean(f.Purpose, 512) || !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 {
+	if !clean(id, 128) || !cleanText(f.Purpose, 512) || !f.Scope.Valid() || f.Limit < 1 || f.Limit > 100 {
 		return out, ErrInvalid
 	}
 	if f.After != "" {
@@ -278,7 +327,28 @@ func (s Service) Audit(ctx context.Context, p account.Principal, id string, f Au
 
 // Reject records malformed HTTP queries without retaining their raw bodies.
 func (s Service) Reject(ctx context.Context, p account.Principal, id string, d Delivery, cause error) error {
-	a := s.start(p, id, "invalid request", "query.rejected", admin.Global, d)
+	return s.reject(ctx, p, id, d, "query.rejected", cause)
+}
+
+// RejectAudit records a malformed or disallowed audit route request.
+func (s Service) RejectAudit(ctx context.Context, p account.Principal, id string, d Delivery, cause error) error {
+	return s.reject(ctx, p, id, d, "audit.rejected", cause)
+}
+func (s Service) reject(ctx context.Context, p account.Principal, id string, d Delivery, action string, cause error) error {
+	if !p.Valid() {
+		return ErrUnauthenticated
+	}
+	if !clean(id, 128) {
+		id = ""
+	}
+	if !validDelivery(d) {
+		d = Delivery{Channel: "unknown"}
+	}
+	purpose := "invalid request"
+	if errors.Is(cause, ErrForbidden) {
+		purpose = "channel forbidden"
+	}
+	a := s.start(p, id, purpose, action, admin.Global, d)
 	return s.finish(ctx, a, cause)
 }
 

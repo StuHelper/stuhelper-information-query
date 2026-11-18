@@ -13,11 +13,13 @@ import (
 
 func TestStrictHTTPAndTrustedIdentity(t *testing.T) {
 	h := httpapi.Handler{Service: &iq.Service{Repo: auditRepo{}}, Identity: func(*http.Request) (account.Principal, iq.Delivery, string) {
-		return account.Principal{}, iq.Delivery{Channel: "admin"}, "req"
+		return account.Principal{Issuer: "test", Subject: "operator"}, iq.Delivery{Channel: "admin"}, "req"
 	}}
 	for _, body := range []string{`{"actor":"admin"}`, `{} {}`, strings.Repeat("x", 17000)} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/information-query/query", strings.NewReader(body)))
+		r := httptest.NewRequest("POST", "/api/v1/information-query/query", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(w, r)
 		if w.Code != 400 || w.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal(w.Code, w.Body.String())
 		}

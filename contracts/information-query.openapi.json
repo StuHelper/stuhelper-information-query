@@ -69,6 +69,46 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Unknown route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -137,6 +177,46 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Unknown route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -191,7 +271,8 @@
           "value": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 2048,
+            "description": "Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -232,7 +313,9 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed."
           },
           "limit": {
             "type": "integer",
@@ -243,7 +326,7 @@
           "after": {
             "type": "string",
             "maxLength": 4096,
-            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation."
+            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant."
           }
         },
         "required": [
@@ -253,7 +336,21 @@
           "domains",
           "purpose",
           "limit"
-        ]
+        ],
+        "not": {
+          "properties": {
+            "kind": {
+              "not": {
+                "enum": [
+                  "account"
+                ]
+              }
+            },
+            "value": {
+              "minLength": 257
+            }
+          }
+        }
       },
       "Field": {
         "type": "object",
@@ -376,11 +473,14 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed."
           },
           "after": {
             "type": "string",
-            "pattern": "^[0-9]*$"
+            "pattern": "^[0-9]*$",
+            "description": "Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page."
           },
           "limit": {
             "type": "integer",
@@ -415,16 +515,38 @@
             "$ref": "#/components/schemas/Scope"
           },
           "channel": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "admin",
+              "bot_private",
+              "bot_group",
+              "unknown"
+            ]
           },
           "target_group": {
             "type": "string"
           },
           "action": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "query",
+              "query.rejected",
+              "audit.query",
+              "audit.rejected",
+              "provider.query",
+              "unknown"
+            ]
           },
           "result": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "success",
+              "denied",
+              "invalid_request",
+              "unauthenticated",
+              "unavailable",
+              "unknown"
+            ]
           },
           "count": {
             "type": "integer"
@@ -438,7 +560,13 @@
           "fields": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "identity",
+                "document",
+                "material",
+                "refund_payee"
+              ]
             }
           },
           "basis": {
@@ -503,7 +631,8 @@
           },
           "changed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
