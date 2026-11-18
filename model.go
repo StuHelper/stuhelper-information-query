@@ -142,6 +142,32 @@ type AuditPruner interface {
 	PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 }
 
+// AuditRetentionMonitor inspects expired audit backlog using read-only maintenance privileges.
+type AuditRetentionMonitor interface {
+	PendingStats(ctx context.Context, before time.Time) (oldest time.Time, hasExpired bool, boundedCount int, err error)
+}
+
+type Stage string
+
+const (
+	StageAuth     Stage = "auth"
+	StageResolve  Stage = "resolve"
+	StageProvider Stage = "provider"
+	StageContract Stage = "contract"
+	StageAudit    Stage = "audit"
+)
+
+// Event carries strictly sanitized diagnostic telemetry. It cannot hold query
+// values, candidate labels, or record field values.
+type Event struct {
+	RequestID string
+	Stage     Stage
+	Domain    string
+	Kind      string
+	Code      string
+	Duration  time.Duration
+}
+
 type AuditHold struct {
 	ID            string     `json:"id"`
 	AuditID       string     `json:"audit_id,omitempty"`

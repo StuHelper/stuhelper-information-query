@@ -60,6 +60,7 @@ scenario_tests:
     - service_test.go#TestBotDefaultAndGroupDelivery
   IQ-09:
     - resolver_test.go#TestResolverFailureAndIsolation
+    - service_test.go#TestSanitizedObserveHookStagesAndZeroLeak
   IQ-10:
     - cursor_test.go#TestCursorAuthenticityAndEquivalentSelections
     - cursor_test.go#TestConfiguredCursorKeyAcrossReplicas
@@ -76,3 +77,4 @@ scenario_tests:
     - postgres/repository_test.go#TestTransactionalVersionedMigrationsAndRollback
     - postgres/repository_test.go#TestAuditLegalHoldExclusionReleaseAndRoleIsolation
     - postgres/repository_test.go#TestPruneSeesHoldCommittedWhileWaiting
+    - postgres/repository_test.go#TestPendingStatsBoundedBacklogAndOldestTimestamp
