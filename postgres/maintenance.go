@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	iq "github.com/StuHelper/stuhelper-information-query"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"time"
 )
@@ -13,6 +14,19 @@ type Maintenance struct {
 	Pool            *pgxpool.Pool
 	RetentionMonths int
 	Now             func() time.Time
+}
+
+// The pruning statement needs a new snapshot after any earlier hold commits.
+func beginRetention(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return nil, err
+	}
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('information_query.audit_retention',0))`); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	return tx, nil
 }
 
 func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int) (int, error) {
@@ -35,7 +49,12 @@ func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	result, err := m.Pool.Exec(ctx, `WITH expired AS (
+	tx, err := beginRetention(ctx, m.Pool)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `WITH expired AS (
  SELECT a.id FROM information_query.audit a
  WHERE a.created_at < $1
    AND NOT information_query.audit_is_held(
@@ -46,6 +65,9 @@ func (m Maintenance) PruneAudit(ctx context.Context, before time.Time, limit int
  ORDER BY a.created_at,a.id LIMIT $2
  ) DELETE FROM information_query.audit a USING expired e WHERE a.id=e.id`, before, limit)
 	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
 		return 0, err
 	}
 	return int(result.RowsAffected()), nil

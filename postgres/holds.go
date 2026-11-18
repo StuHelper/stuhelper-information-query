@@ -92,12 +92,24 @@ func (h HoldStore) CreateHold(ctx context.Context, in iq.AuditHoldInput) (iq.Aud
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	row := h.Pool.QueryRow(ctx, `INSERT INTO information_query.audit_holds(
+	tx, err := beginRetention(ctx, h.Pool)
+	if err != nil {
+		return iq.AuditHold{}, err
+	}
+	defer tx.Rollback(ctx)
+	row := tx.QueryRow(ctx, `INSERT INTO information_query.audit_holds(
  audit_id,request_id,target_account,reason,created_by,review_at,created_at
 ) VALUES($1,$2,$3,$4,$5,$6,$7)
 RETURNING id,audit_id,request_id,target_account,reason,created_by,review_at,created_at,released_at,released_by,release_reason`,
 		auditID, in.RequestID, in.TargetAccount, in.Reason, in.CreatedBy, in.ReviewAt.UTC(), now)
-	return scanHold(row)
+	hold, err := scanHold(row)
+	if err != nil {
+		return iq.AuditHold{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return iq.AuditHold{}, err
+	}
+	return hold, nil
 }
 
 func (h HoldStore) ReleaseHold(ctx context.Context, in iq.AuditHoldRelease) (iq.AuditHold, error) {

@@ -67,20 +67,22 @@ type Provider interface {
 	Query(context.Context, account.Principal, Query) ([]Record, error)
 }
 type Audit struct {
-	ID          string      `json:"id"`
-	Actor       string      `json:"actor"`
-	RequestID   string      `json:"request_id"`
-	Purpose     string      `json:"purpose"`
-	Scope       admin.Scope `json:"scope"`
-	Channel     string      `json:"channel"`
-	TargetGroup string      `json:"target_group"`
-	Action      string      `json:"action"`
-	Result      string      `json:"result"`
-	Count       int         `json:"count"`
-	Targets     []string    `json:"targets"`
-	Fields      []string    `json:"fields"`
-	Basis       []string    `json:"basis"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID           string                   `json:"id"`
+	Actor        string                   `json:"actor"`
+	RequestID    string                   `json:"request_id"`
+	Purpose      string                   `json:"purpose"`
+	Scope        admin.Scope              `json:"scope"`
+	Channel      string                   `json:"channel"`
+	TargetGroup  string                   `json:"target_group"`
+	Action       string                   `json:"action"`
+	Result       string                   `json:"result"`
+	Count        int                      `json:"count"`
+	Targets      []string                 `json:"targets"`
+	Fields       []string                 `json:"fields"`
+	Basis        []string                 `json:"basis"`
+	CreatedAt    time.Time                `json:"created_at"`
+	Scopes       []admin.Scope            `json:"-"`
+	TargetScopes map[string][]admin.Scope `json:"-"`
 }
 type AuditFilter struct {
 	Scope   admin.Scope `json:"scope"`
