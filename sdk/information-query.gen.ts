@@ -92,6 +92,7 @@ export interface components {
             scope: components["schemas"]["Scope"];
             /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. */
             purpose: string;
+            /** @description Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page. */
             after: string;
             limit: number;
         };

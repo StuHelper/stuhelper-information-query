@@ -384,7 +384,8 @@
           },
           "after": {
             "type": "string",
-            "pattern": "^[0-9]*$"
+            "pattern": "^[0-9]*$",
+            "description": "Empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page."
           },
           "limit": {
             "type": "integer",

@@ -73,8 +73,19 @@ func (s Service) evaluate(ctx context.Context, p account.Principal, cap string, 
 	}
 	return nil
 }
+func addScope(list *[]admin.Scope, sc admin.Scope) {
+	if !slices.Contains(*list, sc) {
+		*list = append(*list, sc)
+	}
+}
+func addTargetScope(m map[string][]admin.Scope, target string, sc admin.Scope) {
+	list := m[target]
+	if !slices.Contains(list, sc) {
+		m[target] = append(list, sc)
+	}
+}
 func (s Service) start(p account.Principal, requestID, purpose, action string, scope admin.Scope, d Delivery) Audit {
-	return Audit{Actor: p.Key(), RequestID: requestID, Purpose: purpose, Action: action, Scope: scope, Channel: d.Channel, TargetGroup: d.Group, Targets: []string{}, Fields: []string{}, Basis: []string{}, CreatedAt: s.now()}
+	return Audit{Actor: p.Key(), RequestID: requestID, Purpose: purpose, Action: action, Scope: scope, Channel: d.Channel, TargetGroup: d.Group, Targets: []string{}, Fields: []string{}, Basis: []string{}, CreatedAt: s.now(), Scopes: []admin.Scope{}, TargetScopes: map[string][]admin.Scope{}}
 }
 func (s Service) finish(ctx context.Context, a Audit, err error) error {
 	a.Result = "success"
@@ -122,6 +133,9 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 		return out, ErrInvalid
 	}
 	a.Fields = append([]string{}, q.Fields...)
+	for _, domain := range q.Domains {
+		addScope(&a.Scopes, admin.Scope{School: q.Scope.School, Group: q.Scope.Group, Module: domain})
+	}
 	if d.Channel != "admin" {
 		if !s.BotEnabled {
 			return out, ErrForbidden
@@ -135,9 +149,21 @@ func (s Service) Query(ctx context.Context, p account.Principal, id string, d De
 		return out, err
 	}
 	for _, group := range out.Groups {
-		a.Targets = append(a.Targets, group.Candidate.Account)
+		acct := group.Candidate.Account
+		if !slices.Contains(a.Targets, acct) {
+			a.Targets = append(a.Targets, acct)
+		}
+		addScope(&a.Scopes, group.Candidate.Scope)
+		addTargetScope(a.TargetScopes, acct, group.Candidate.Scope)
+		for _, domain := range q.Domains {
+			sc := admin.Scope{School: group.Candidate.Scope.School, Group: group.Candidate.Scope.Group, Module: domain}
+			addScope(&a.Scopes, sc)
+			addTargetScope(a.TargetScopes, acct, sc)
+		}
 		a.Count += len(group.Items)
 		for _, r := range group.Items {
+			addScope(&a.Scopes, r.Scope)
+			addTargetScope(a.TargetScopes, acct, r.Scope)
 			for _, f := range r.Fields {
 				if f.Category != "business" && !f.Masked && !slices.Contains(a.Fields, f.Category) {
 					a.Fields = append(a.Fields, f.Category)
