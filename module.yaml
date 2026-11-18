@@ -30,6 +30,7 @@ scenario_tests:
   IQ-01:
     - resolver_test.go#TestResolveKindsGroupsAndHistory
   IQ-02:
+    - authorization_test.go#TestAuthorizationReuseEndsAtRequestBoundary
     - service_test.go#TestScopeAndDomainIsolation
     - postgres/repository_test.go#TestMultiDomainAndCrossSchoolAuditVisibilityAndTargetRedaction
   IQ-03:
