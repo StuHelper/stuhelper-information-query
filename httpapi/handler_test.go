@@ -651,9 +651,10 @@ func TestBatchPreviewHTTPRejectsSensitiveFieldsAndSupportsSDK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leads := []string{(account.Principal{Issuer: "issuer", Subject: "u1"}).Key(), (account.Principal{Issuer: "issuer", Subject: "u2"}).Key()}
 	resp, err := client.PreviewInformationBatchWithResponse(context.Background(), sdk.BatchPreviewRequest{
 		Kind:    sdk.BatchPreviewRequestKindAccount,
-		Values:  []string{(account.Principal{Issuer: "issuer", Subject: "u1"}).Key(), (account.Principal{Issuer: "issuer", Subject: "u2"}).Key()},
+		Values:  leads,
 		Scope:   sdk.Scope{School: "buaa", Group: "*", Module: "*"},
 		Domains: []sdk.BatchPreviewRequestDomains{sdk.BatchPreviewRequestDomainsProfiles},
 		Purpose: "批量核对",
@@ -661,7 +662,15 @@ func TestBatchPreviewHTTPRejectsSensitiveFieldsAndSupportsSDK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode() != 200 || resp.JSON200 == nil || len(resp.JSON200.Entries) != 2 {
+	if resp.StatusCode() != 200 || resp.JSON200 == nil || len(resp.JSON200.Entries) != len(leads) {
 		t.Fatalf("unexpected SDK preview response: status=%d body=%s", resp.StatusCode(), string(resp.Body))
+	}
+	if resp.HTTPResponse.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("preview response can be cached")
+	}
+	for index, entry := range resp.JSON200.Entries {
+		if entry.Index != index || entry.Value != leads[index] {
+			t.Errorf("SDK preview response did not preserve input row %d", index)
+		}
 	}
 }

@@ -1,7 +1,7 @@
 ---
 type: development
 status: InReview
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # 信息查询装配与实施状态
@@ -11,7 +11,7 @@ updated: 2026-11-21
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
 | POST | `/api/v1/information-query/query` | 按线索解析候选，再按账号查询业务域 |
-| POST | `/api/v1/information-query/preview` | 管理端有界批量线索掩码与计数预览（禁止展开敏感字段） |
+| POST | `/api/v1/information-query/preview` | 按行回显线索，返回掩码候选和计数 |
 | POST | `/api/v1/information-query/audit/query` | 独立授权的分页审计查询 |
 | POST | `/api/v1/information-query/capabilities` | 当前操作者在指定范围下的只读能力与装配预检 |
 
@@ -37,9 +37,11 @@ OpenAPI 版本为 0.2.0。查询 kind 为 name、student_id、staff_id、qq、ac
 
 `capabilities` 接收可选 `scope`，默认全局范围。响应分别返回当前操作者的域、敏感类别、审计和机器人能力，以及宿主已装配的域和线索类型。预检限时 3 秒，成功或失败均不追加查询审计。
 
-批量预览每次接收 1 至 20 条同类型唯一线索，仅供 `admin` 渠道使用，要求 `information-query.batch.read` 及所选域的读取权限。接口禁止 `fields` 参数，在审计提交成功后按输入下标返回候选与计数。
+批量预览每次接收 1 至 20 条同类型唯一线索，所有类型均限制为 256 个 Unicode 码点。请求限于 `admin` 渠道，要求 `information-query.batch.read` 和所选域的读取权限。
 
-每条线索最多返回 5 个候选，每批最多 50 个候选。各候选按域返回最多 20 条记录的计数，并标记是否还有更多。预览保留候选的完整账号键与掩码标签，业务字段值不进入响应。
+审计提交后，只向发起人按输入顺序返回 `entries`。各条目的 `index` 对应输入下标，`value` 保留线索原值。每条线索最多返回 5 个候选，每批最多 50 个。各候选按域返回最多 20 条记录的计数，并标记是否还有更多。
+
+候选保留完整账号键与掩码标签。预览接口拒绝 `fields` 参数，响应只含线索、候选和业务记录计数。
 
 ## 端口与装配
 
@@ -51,7 +53,7 @@ PruneAudit(ctx context.Context, before time.Time, limit int) (int, error)
 
 Lead 包含 Kind、Value、Scope、Purpose、Limit、After。Candidate 包含 Account、Source、Current、ChangedAt、Scope、Label。
 
-Account 使用平台 Principal.Key() 生成的完整账号键，最多 2048 字节。直接输入无效账号键返回 400，解析器给出无效账号键返回 503，两种情况均在访问业务域前结束。其他线索最多 256 个 Unicode 码点。
+完整查询的账号线索与解析后的账号键均使用平台 Principal.Key() 生成的完整账号键，最多 2048 字节。完整查询的其他线索最多 256 个 Unicode 码点。直接输入无效账号键返回 400，解析器给出无效账号键返回 503。
 
 Service.Resolvers 按 kind 装配：name、student_id、staff_id 接 verification，qq 接 qq-binding。Resolver 先按操作者有效范围过滤，再按稳定排他游标分页，端口上限为 50。编排每次请求一个候选，直到候选上限或业务记录预算耗尽。
 
@@ -99,9 +101,11 @@ HTTP 限制正文 16 KiB，拒绝未知字段与尾随 JSON，响应 `no-store`�
 | `information-query.batch.read` | 管理端有界批量线索预览 |
 | `information-query.audit.read` | 审计查询 |
 
-每次 Query 对同一操作者、能力和完整范围复用已通过的编排层授权结果。不同学校、群和模块分别检查，翻页重新授权。各域 Provider 独立检查业务权限。未申请完整身份字段时返回固定掩码，其他敏感类别未申请时省略。
+每次 Query 对同一操作者、能力和完整范围复用已通过的编排层授权，翻页重新授权。完整查询默认掩码显示姓名、学号、手机号和 QQ 号。操作者主动申请 `identity` 且通过编排层和提供方的类别授权后，获得完整值并留下披露审计。
 
-查询、预览、审计查询及其拒绝记录操作者、请求 ID、事由、范围、目标账号键、数量、时间、结果与渠道，并附敏感类别和权限依据。用途支持换行和制表符，最多 512 个 Unicode 码点。群聊查询附带目标群标识。
+查询与审计查询记录操作者、请求 ID、事由、范围、数量、时间、结果、渠道和权限依据。业务查询记录目标账号键和敏感类别，群聊查询另记目标群。事由支持换行和制表符，最多 512 个 Unicode 码点。
+
+预览审计使用固定事由，以 `lead_kind` 和 `lead_digest` 记录线索。摘要按整批输入顺序计算，绑定请求 ID，使用 `Service.CursorKey` 的 HMAC-SHA256。预览日志与主审计、提供方审计均省略原始线索和目标账号键。提供方写审计时须保留调用上下文。
 
 响应在对应审计写入成功后返回。写入失败返回 503。记录只保留申请或实际明文披露的敏感类别，无权结果记为 `denied`。落盘前清洗数据，姓名、学号、教工号、QQ 线索、请求正文和业务字段值不写入审计。
 
@@ -131,7 +135,7 @@ Backend 已按启用的模块注入业务域，catalog 适配器限本人在指�
 
 ### 源码与持续集成
 
-[module.yaml](https://github.com/StuHelper/stuhelper-information-query/blob/develop/module.yaml) 的 `scenario_tests` 登记 IQ-01 至 IQ-11，覆盖线索解析、候选隔离、区域权限、敏感字段、审计提交、机器人渠道、组合分页、有界预览和保留清理。检查脚本验证登记所指的文件和测试函数存在。
+[module.yaml](https://github.com/StuHelper/stuhelper-information-query/blob/develop/module.yaml) 的 `scenario_tests` 登记 IQ-01 至 IQ-12，覆盖线索解析、候选隔离、范围权限、敏感字段、审计提交、机器人渠道、组合分页、保留清理和批量预览。检查脚本验证登记所指的文件和测试函数存在。
 
 develop 源码 `6cbd87f` 已通过隔离 PostgreSQL 的 Information query checks，覆盖生成一致性、文档、架构边界、race 测试、迁移、运行与维护身份隔离及构建。见 [CI 运行](https://github.com/StuHelper/stuhelper-information-query/actions/runs/44355069955)。
 
@@ -139,4 +143,3 @@ develop 源码 `6cbd87f` 已通过隔离 PostgreSQL 的 Information query checks
 
 - 批量预览、能力预检、教工号解析、审计多维检索与争议保留已在 develop 实现。升级宿主和调用方后，待核对路由、数据库角色与已锁定的跨仓组合。
 - 真实账号场景和审计恢复演练待验证。批量导出尚无实现，保留待确认。
-- 批量预览的 OpenAPI 将原始线索描述为不回显，并对各输入值声明 256 字符上限。实现对 `account` 使用平台账号键规则，并将该值返回为 `candidate.account`。账号键的披露规则与契约长度待确认。

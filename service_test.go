@@ -99,18 +99,32 @@ func TestScopeAndDomainIsolation(t *testing.T) {
 	}
 }
 func TestSensitiveMaskAuditAndFailure(t *testing.T) {
-	s, r, a, _, q := fixture()
+	s, r, a, p, q := fixture()
+	identities := []iq.Field{
+		{Name: "name", Category: "identity", Value: "同名"},
+		{Name: "student_id", Category: "identity", Value: "STUD-TEST-001"},
+		{Name: "phone", Category: "identity", Value: "19900001234"},
+		{Name: "qq", Category: "identity", Value: "123456789"},
+	}
+	p.items[0].Fields = append(slices.Clone(identities), p.items[0].Fields[2:]...)
 	out, e := run(s, q)
-	if e != nil || len(out.Groups[0].Items[0].Fields) != 2 || out.Groups[0].Items[0].Fields[0].Value != "***" || !out.Groups[0].Items[0].Fields[1].Masked {
+	if e != nil || recordCount(out) != 1 || len(out.Groups[0].Items[0].Fields) != len(identities) {
 		t.Fatal("mask", e)
 	}
+	for i, field := range out.Groups[0].Items[0].Fields {
+		if field.Name != identities[i].Name || field.Value != "***" || !field.Masked {
+			t.Errorf("identity field %d was not masked", i)
+		}
+	}
 	q.Fields = []string{"identity"}
-	if _, e = run(s, q); !errors.Is(e, iq.ErrForbidden) {
-		t.Fatal(e)
+	if denied, err := run(s, q); !errors.Is(err, iq.ErrForbidden) || recordCount(denied) != 0 {
+		t.Fatalf("identity disclosure without a sensitive grant: %v", err)
 	}
 	a.caps["information-query.identity.read"] = true
 	out, e = run(s, q)
-	if e != nil || out.Groups[0].Items[0].Fields[0].Value != "同名" || r.records[len(r.records)-1].Count != 1 {
+	lastAudit := r.records[len(r.records)-1]
+	if e != nil || recordCount(out) != 1 || !slices.Equal(out.Groups[0].Items[0].Fields, identities) ||
+		lastAudit.Count != 1 || !slices.Equal(lastAudit.Fields, []string{"identity"}) {
 		t.Fatal("disclosure", e)
 	}
 	for _, category := range []string{"document", "material", "refund_payee"} {

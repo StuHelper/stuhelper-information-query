@@ -1,11 +1,33 @@
 package informationquery
 
 import (
-	"github.com/StuHelper/stuhelper-platform/admin"
+	"context"
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/StuHelper/stuhelper-platform/admin"
 )
+
+type batchPreviewAuditKey struct{}
+
+const batchPreviewPurpose = "batch preview"
+
+// SanitizeAuditForContext applies preview disclosure limits to provider audits.
+// The resolver and provider must preserve the request context when appending.
+func SanitizeAuditForContext(ctx context.Context, a Audit) Audit {
+	if ctx.Value(batchPreviewAuditKey{}) == true {
+		a = sanitizePreviewAudit(a)
+	}
+	return SanitizeAudit(a)
+}
+
+func sanitizePreviewAudit(a Audit) Audit {
+	a.Purpose = batchPreviewPurpose
+	a.Targets = nil
+	a.TargetScopes = nil
+	return a
+}
 
 func sanitizeString(v string, max int, keepTextWhitespace bool) string {
 	v = strings.ToValidUTF8(v, "\uFFFD")
@@ -48,6 +70,18 @@ func SanitizeAudit(a Audit) Audit {
 	}
 	if !slices.Contains(auditActions, a.Action) {
 		a.Action = "unknown"
+	}
+	if a.Action == "batch.preview" {
+		a = sanitizePreviewAudit(a)
+	}
+	if a.Action != "batch.preview" || !slices.Contains(kinds, a.LeadKind) {
+		a.LeadKind = ""
+		a.LeadDigest = ""
+	}
+	if len(a.LeadDigest) != 64 || strings.ContainsFunc(a.LeadDigest, func(r rune) bool {
+		return !strings.ContainsRune("0123456789abcdef", r)
+	}) {
+		a.LeadDigest = ""
 	}
 	if a.Result == "forbidden" {
 		a.Result = "denied"

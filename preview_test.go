@@ -156,16 +156,20 @@ func TestBoundedBatchPreviewAuthorizationMaskingAndAudit(t *testing.T) {
 		t.Fatalf("expected empty candidates for second lead, got %+v", out.Entries[1])
 	}
 
-	// Verify neither response nor audit contains raw clues or sensitive record values.
+	// Each response row echoes its input, including a row without candidates.
 	respJSON, _ := json.Marshal(out)
 	auditJSON, _ := json.Marshal(r.records)
-	for _, secret := range []string{"RAW-QQ-10001", "RAW-QQ-10002", "SENSITIVE-DOC-9999"} {
-		if strings.Contains(string(respJSON), secret) || strings.Contains(string(auditJSON), secret) {
-			t.Fatalf("secret %q leaked in response or audit", secret)
+	for index, value := range bq.Values {
+		if out.Entries[index].Value != value || strings.Contains(string(auditJSON), value) {
+			t.Errorf("incorrect disclosure for lead at index %d", index)
 		}
 	}
+	if strings.Contains(string(respJSON), "SENSITIVE-DOC-9999") || strings.Contains(string(auditJSON), "SENSITIVE-DOC-9999") {
+		t.Error("preview returned or audited a sensitive business field")
+	}
 	lastAudit := r.records[len(r.records)-1]
-	if lastAudit.Action != "batch.preview" || lastAudit.Result != "success" || len(lastAudit.Fields) != 0 || len(lastAudit.Targets) != 5 {
+	if lastAudit.Action != "batch.preview" || lastAudit.Result != "success" || len(lastAudit.Fields) != 0 ||
+		len(lastAudit.Targets) != 0 || len(lastAudit.TargetScopes) != 0 || lastAudit.LeadKind != bq.Kind || len(lastAudit.LeadDigest) != 64 {
 		t.Fatalf("unexpected batch audit record: %+v", lastAudit)
 	}
 

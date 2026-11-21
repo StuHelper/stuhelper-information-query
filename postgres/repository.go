@@ -105,7 +105,7 @@ REVOKE ALL ON information_query.schema_migrations FROM PUBLIC;
 }
 
 func (r Repository) Append(ctx context.Context, a iq.Audit) error {
-	a = iq.SanitizeAudit(a)
+	a = iq.SanitizeAuditForContext(ctx, a)
 	if r.Pool == nil {
 		return iq.ErrUnavailable
 	}

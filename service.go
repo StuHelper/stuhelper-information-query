@@ -37,7 +37,7 @@ func detailErr(base error, reason, domain, field string) error {
 }
 
 type Service struct {
-	// CursorKey may be shared by replicas. A nil key uses this process's ephemeral key.
+	// CursorKey signs continuations and batch audit digests. A nil key is process-local.
 	CursorKey  *[32]byte
 	Auth       Authorizer
 	Repo       Repository
@@ -59,6 +59,9 @@ func validQueryValue(kind, value string) bool {
 		_, err := account.Parse(value)
 		return err == nil
 	}
+	return validLeadText(value)
+}
+func validLeadText(value string) bool {
 	return utf8.ValidString(value) && value != "" && utf8.RuneCountInString(value) <= 256 && !strings.ContainsFunc(value, unicode.IsControl)
 }
 func cleanText(v string, max int) bool {
@@ -150,7 +153,7 @@ func (s Service) finish(ctx context.Context, a Audit, err error) error {
 			a.Result = "unavailable"
 		}
 	}
-	a = SanitizeAudit(a)
+	a = SanitizeAuditForContext(ctx, a)
 	start := time.Now()
 	// A cancelled caller must not prevent recording a denial or a completed disclosure.
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
@@ -436,6 +439,12 @@ func (s Service) Reject(ctx context.Context, p account.Principal, id string, d D
 func (s Service) RejectAudit(ctx context.Context, p account.Principal, id string, d Delivery, cause error) error {
 	return s.reject(ctx, p, id, d, "audit.rejected", cause)
 }
+
+// RejectPreview records malformed preview requests without retaining the input body.
+func (s Service) RejectPreview(ctx context.Context, p account.Principal, id string, d Delivery, cause error) error {
+	return s.reject(ctx, p, id, d, "batch.preview", cause)
+}
+
 func (s Service) reject(ctx context.Context, p account.Principal, id string, d Delivery, action string, cause error) error {
 	if !p.Valid() {
 		return ErrUnauthenticated

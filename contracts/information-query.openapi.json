@@ -292,7 +292,7 @@
     "/api/v1/information-query/preview": {
       "post": {
         "operationId": "previewInformationBatch",
-        "description": "Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.",
+        "description": "Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.",
         "requestBody": {
           "required": true,
           "content": {
@@ -446,7 +446,7 @@
                 "refund_payee"
               ]
             },
-            "description": "Sensitive categories explicitly requested; omitted means masked identity fields only."
+            "description": "Sensitive categories explicitly requested and checked against the caller's permissions. Names, student IDs, phone numbers, and QQ numbers are masked by default. Full identity values require requesting identity and passing both authorization and audit."
           },
           "purpose": {
             "type": "string",
@@ -762,6 +762,7 @@
               "audit.query",
               "audit.rejected",
               "provider.query",
+              "batch.preview",
               "unknown"
             ]
           },
@@ -778,6 +779,29 @@
           },
           "count": {
             "type": "integer"
+          },
+          "lead_kind": {
+            "type": "string",
+            "enum": [
+              "name",
+              "student_id",
+              "staff_id",
+              "qq",
+              "account"
+            ],
+            "x-enum-varnames": [
+              "AuditLeadKindName",
+              "AuditLeadKindStudentId",
+              "AuditLeadKindStaffId",
+              "AuditLeadKindQq",
+              "AuditLeadKindAccount"
+            ],
+            "description": "Input kind for a batch preview audit when the kind is recognized."
+          },
+          "lead_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Keyed digest of the validated ordered batch, scoped to its request ID."
           },
           "targets": {
             "type": "array",
@@ -1066,7 +1090,7 @@
               "minLength": 1,
               "maxLength": 256
             },
-            "description": "Up to 20 unique leads of the same kind; raw values are never echoed or logged."
+            "description": "Up to 20 unique leads of the same kind, each at most 256 Unicode code points, including account keys. The authorized requester receives each original value in the corresponding response entry."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -1101,7 +1125,8 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "description": "Required operator input. Preview uses a fixed audit purpose to keep free text out of audit storage."
           }
         },
         "required": [
@@ -1188,7 +1213,13 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 19,
-            "description": "Zero-based index corresponding to the input values array without echoing raw lead text."
+            "description": "Zero-based index in the input values array."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Original submitted lead at this index. Return only to the authenticated requester after audit commits. Do not log or persist this value."
           },
           "candidates": {
             "type": "array",
@@ -1204,6 +1235,7 @@
         },
         "required": [
           "index",
+          "value",
           "candidates",
           "has_more_candidates"
         ]

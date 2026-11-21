@@ -64,7 +64,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits. */
+        /** @description Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers. */
         post: operations["previewInformationBatch"];
         delete?: never;
         options?: never;
@@ -91,7 +91,7 @@ export interface components {
             value: string;
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
-            /** @description Sensitive categories explicitly requested; omitted means masked identity fields only. */
+            /** @description Sensitive categories explicitly requested and checked against the caller's permissions. Names, student IDs, phone numbers, and QQ numbers are masked by default. Full identity values require requesting identity and passing both authorization and audit. */
             fields?: ("identity" | "document" | "material" | "refund_payee")[];
             /** @description Up to 512 Unicode code points. Line breaks and tabs are allowed. */
             purpose: string;
@@ -179,10 +179,17 @@ export interface components {
             channel: "admin" | "bot_private" | "bot_group" | "unknown";
             target_group: string;
             /** @enum {string} */
-            action: "query" | "query.rejected" | "audit.query" | "audit.rejected" | "provider.query" | "unknown";
+            action: "query" | "query.rejected" | "audit.query" | "audit.rejected" | "provider.query" | "batch.preview" | "unknown";
             /** @enum {string} */
             result: "success" | "denied" | "invalid_request" | "unauthenticated" | "unavailable" | "unknown";
             count: number;
+            /**
+             * @description Input kind for a batch preview audit when the kind is recognized.
+             * @enum {string}
+             */
+            lead_kind?: "name" | "student_id" | "staff_id" | "qq" | "account";
+            /** @description Keyed digest of the validated ordered batch, scoped to its request ID. */
+            lead_digest?: string;
             targets: string[];
             fields: ("identity" | "document" | "material" | "refund_payee")[];
             basis: string[];
@@ -233,10 +240,11 @@ export interface components {
         BatchPreviewRequest: {
             /** @enum {string} */
             kind: "name" | "student_id" | "qq" | "account" | "staff_id";
-            /** @description Up to 20 unique leads of the same kind; raw values are never echoed or logged. */
+            /** @description Up to 20 unique leads of the same kind, each at most 256 Unicode code points, including account keys. The authorized requester receives each original value in the corresponding response entry. */
             values: string[];
             scope: components["schemas"]["Scope"];
             domains: ("profiles" | "verification" | "catalog" | "reviews" | "resources" | "billing" | "groups")[];
+            /** @description Required operator input. Preview uses a fixed audit purpose to keep free text out of audit storage. */
             purpose: string;
         };
         DomainSummary: {
@@ -254,8 +262,10 @@ export interface components {
             domain_counts: components["schemas"]["DomainSummary"][];
         };
         BatchPreviewEntry: {
-            /** @description Zero-based index corresponding to the input values array without echoing raw lead text. */
+            /** @description Zero-based index in the input values array. */
             index: number;
+            /** @description Original submitted lead at this index. Return only to the authenticated requester after audit commits. Do not log or persist this value. */
+            value: string;
             candidates: components["schemas"]["CandidatePreview"][];
             /** @description True when additional candidates existed beyond the per-lead or batch processing budget. */
             has_more_candidates: boolean;

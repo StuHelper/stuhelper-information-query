@@ -2,11 +2,14 @@ package informationquery
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"github.com/StuHelper/stuhelper-platform/account"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/StuHelper/stuhelper-platform/account"
 )
 
 const (
@@ -18,15 +21,13 @@ const (
 	maxBatchPayloadBytes       = 1048576
 )
 
-// Preview resolves up to 20 same-kind leads for admin operators and returns only
-// candidate binding metadata plus bounded per-domain record counts. Sensitive fields
-// are never requested or returned, and results are released only after audit commits.
+// Preview returns the initiating admin's submitted leads with masked candidate
+// metadata and bounded per-domain counts after the batch audit commits.
 func (s Service) Preview(ctx context.Context, p account.Principal, id string, d Delivery, q BatchQuery) (out BatchPreviewResult, err error) {
-	a := s.start(p, id, q.Purpose, "batch.preview", q.Scope, d)
+	a := s.start(p, id, batchPreviewPurpose, "batch.preview", q.Scope, d)
+	a.LeadKind = q.Kind
 	defer func() {
 		if err != nil {
-			a.Targets = nil
-			a.TargetScopes = nil
 			a.Scopes = nil
 			a.Count = 0
 		}
@@ -51,11 +52,18 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 	}
 	seenValues := make(map[string]bool, len(q.Values))
 	for _, v := range q.Values {
-		if !validQueryValue(q.Kind, v) || seenValues[v] {
+		if !validLeadText(v) || (q.Kind == "account" && !validQueryValue(q.Kind, v)) || seenValues[v] {
 			return out, ErrInvalid
 		}
 		seenValues[v] = true
 	}
+	// Forward a fixed purpose so free text cannot persist in provider audit.
+	q.Purpose = batchPreviewPurpose
+	values, _ := json.Marshal(q.Values)
+	// The domain prefix separates audit digests from continuation signatures.
+	digestInput := append([]byte("information-query/batch-preview/v1\x00"+id+"\x00"+q.Kind+"\x00"), values...)
+	a.LeadDigest = hex.EncodeToString(s.keyedDigest(digestInput))
+	ctx = context.WithValue(ctx, batchPreviewAuditKey{}, true)
 	// Batch preview is restricted to the admin channel and requires independent batch capability.
 	if d.Channel != "admin" {
 		return out, ErrForbidden
@@ -71,7 +79,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 		UnavailableDomains: []string{},
 	}
 	for i := range out.Entries {
-		out.Entries[i] = BatchPreviewEntry{Index: i, Candidates: []CandidatePreview{}}
+		out.Entries[i] = BatchPreviewEntry{Index: i, Value: q.Values[i], Candidates: []CandidatePreview{}}
 	}
 	for _, domain := range q.Domains {
 		domainScope := q.Scope
@@ -178,11 +186,7 @@ func (s Service) Preview(ctx context.Context, p account.Principal, id string, d 
 		out.Entries[idx].HasMoreCandidates = hasMoreLead
 		for _, candidate := range candidates {
 			totalCandidates++
-			addTargetScope(a.TargetScopes, candidate.Account, candidate.Scope)
 			addScope(&a.Scopes, candidate.Scope)
-			if !slices.Contains(a.Targets, candidate.Account) {
-				a.Targets = append(a.Targets, candidate.Account)
-			}
 			summaries, usedBudget, truncatedByBudget, e := s.summarizeCandidateDomains(ctx, p, candidate.Account, q, &a, recordBudget, &payloadBytes)
 			if e != nil {
 				return BatchPreviewResult{}, e
@@ -247,7 +251,6 @@ func (s Service) summarizeCandidateDomains(ctx context.Context, p account.Princi
 				return nil, used, false, ErrUnavailable
 			}
 			previous = r.ID
-			addTargetScope(a.TargetScopes, accountKey, r.Scope)
 			addScope(&a.Scopes, r.Scope)
 			if e = s.evaluate(ctx, p, "information-query."+domain+".read", r.Scope, a, "domain_forbidden", domain, ""); e != nil {
 				return nil, used, false, e
