@@ -21,6 +21,7 @@ import (
 const (
 	AuditActionAuditQuery    AuditAction = "audit.query"
 	AuditActionAuditRejected AuditAction = "audit.rejected"
+	AuditActionBatchPreview  AuditAction = "batch.preview"
 	AuditActionProviderQuery AuditAction = "provider.query"
 	AuditActionQuery         AuditAction = "query"
 	AuditActionQueryRejected AuditAction = "query.rejected"
@@ -33,6 +34,8 @@ func (e AuditAction) Valid() bool {
 	case AuditActionAuditQuery:
 		return true
 	case AuditActionAuditRejected:
+		return true
+	case AuditActionBatchPreview:
 		return true
 	case AuditActionProviderQuery:
 		return true
@@ -89,6 +92,33 @@ func (e AuditFields) Valid() bool {
 	case AuditFieldsMaterial:
 		return true
 	case AuditFieldsRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditLeadKind.
+const (
+	AuditLeadKindAccount   AuditLeadKind = "account"
+	AuditLeadKindName      AuditLeadKind = "name"
+	AuditLeadKindQq        AuditLeadKind = "qq"
+	AuditLeadKindStaffId   AuditLeadKind = "staff_id"
+	AuditLeadKindStudentId AuditLeadKind = "student_id"
+)
+
+// Valid indicates whether the value is a known member of the AuditLeadKind enum.
+func (e AuditLeadKind) Valid() bool {
+	switch e {
+	case AuditLeadKindAccount:
+		return true
+	case AuditLeadKindName:
+		return true
+	case AuditLeadKindQq:
+		return true
+	case AuditLeadKindStaffId:
+		return true
+	case AuditLeadKindStudentId:
 		return true
 	default:
 		return false
@@ -571,20 +601,26 @@ func (e QueryKind) Valid() bool {
 
 // Audit defines model for Audit.
 type Audit struct {
-	Action      AuditAction   `json:"action"`
-	Actor       string        `json:"actor"`
-	Basis       []string      `json:"basis"`
-	Channel     AuditChannel  `json:"channel"`
-	Count       int           `json:"count"`
-	CreatedAt   time.Time     `json:"created_at"`
-	Fields      []AuditFields `json:"fields"`
-	Id          string        `json:"id"`
-	Purpose     string        `json:"purpose"`
-	RequestId   string        `json:"request_id"`
-	Result      AuditResult   `json:"result"`
-	Scope       Scope         `json:"scope"`
-	TargetGroup string        `json:"target_group"`
-	Targets     []string      `json:"targets"`
+	Action    AuditAction   `json:"action"`
+	Actor     string        `json:"actor"`
+	Basis     []string      `json:"basis"`
+	Channel   AuditChannel  `json:"channel"`
+	Count     int           `json:"count"`
+	CreatedAt time.Time     `json:"created_at"`
+	Fields    []AuditFields `json:"fields"`
+	Id        string        `json:"id"`
+
+	// LeadDigest Keyed digest of the validated ordered batch, scoped to its request ID.
+	LeadDigest *string `json:"lead_digest,omitempty"`
+
+	// LeadKind Input kind for a batch preview audit when the kind is recognized.
+	LeadKind    *AuditLeadKind `json:"lead_kind,omitempty"`
+	Purpose     string         `json:"purpose"`
+	RequestId   string         `json:"request_id"`
+	Result      AuditResult    `json:"result"`
+	Scope       Scope          `json:"scope"`
+	TargetGroup string         `json:"target_group"`
+	Targets     []string       `json:"targets"`
 }
 
 // AuditAction defines model for Audit.Action.
@@ -595,6 +631,9 @@ type AuditChannel string
 
 // AuditFields defines model for Audit.Fields.
 type AuditFields string
+
+// AuditLeadKind Input kind for a batch preview audit when the kind is recognized.
+type AuditLeadKind string
 
 // AuditResult defines model for Audit.Result.
 type AuditResult string
@@ -644,18 +683,23 @@ type BatchPreviewEntry struct {
 	// HasMoreCandidates True when additional candidates existed beyond the per-lead or batch processing budget.
 	HasMoreCandidates bool `json:"has_more_candidates"`
 
-	// Index Zero-based index corresponding to the input values array without echoing raw lead text.
+	// Index Zero-based index in the input values array.
 	Index int `json:"index"`
+
+	// Value Original submitted lead at this index. Return only to the authenticated requester after audit commits. Do not log or persist this value.
+	Value string `json:"value"`
 }
 
 // BatchPreviewRequest defines model for BatchPreviewRequest.
 type BatchPreviewRequest struct {
 	Domains []BatchPreviewRequestDomains `json:"domains"`
 	Kind    BatchPreviewRequestKind      `json:"kind"`
-	Purpose string                       `json:"purpose"`
-	Scope   Scope                        `json:"scope"`
 
-	// Values Up to 20 unique leads of the same kind; raw values are never echoed or logged.
+	// Purpose Required operator input. Preview uses a fixed audit purpose to keep free text out of audit storage.
+	Purpose string `json:"purpose"`
+	Scope   Scope  `json:"scope"`
+
+	// Values Up to 20 unique leads of the same kind, each at most 256 Unicode code points, including account keys. The authorized requester receives each original value in the corresponding response entry.
 	Values []string `json:"values"`
 }
 
@@ -798,7 +842,7 @@ type Query struct {
 	After   *string        `json:"after,omitempty"`
 	Domains []QueryDomains `json:"domains"`
 
-	// Fields Sensitive categories explicitly requested; omitted means masked identity fields only.
+	// Fields Sensitive categories explicitly requested and checked against the caller's permissions. Names, student IDs, phone numbers, and QQ numbers are masked by default. Full identity values require requesting identity and passing both authorization and audit.
 	Fields *[]QueryFields `json:"fields,omitempty"`
 
 	// Kind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
@@ -964,13 +1008,13 @@ type ClientInterface interface {
 	// PreviewInformationBatchWithBody performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 	PreviewInformationBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PreviewInformationBatch performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 	PreviewInformationBatch(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// QueryInformationWithBody performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
@@ -1053,7 +1097,7 @@ func (c *Client) QueryInformationCapabilities(ctx context.Context, body QueryInf
 // PreviewInformationBatchWithBody performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 func (c *Client) PreviewInformationBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPreviewInformationBatchRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -1069,7 +1113,7 @@ func (c *Client) PreviewInformationBatchWithBody(ctx context.Context, contentTyp
 // PreviewInformationBatch performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 func (c *Client) PreviewInformationBatch(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPreviewInformationBatchRequest(c.Server, body)
 	if err != nil {
@@ -1349,7 +1393,7 @@ type ClientWithResponsesInterface interface {
 	// PreviewInformationBatchWithBodyWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	PreviewInformationBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error)
@@ -1357,7 +1401,7 @@ type ClientWithResponsesInterface interface {
 	// PreviewInformationBatchWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 	PreviewInformationBatchWithResponse(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error)
 
 	// QueryInformationWithBodyWithResponse performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
@@ -1762,7 +1806,7 @@ func (c *ClientWithResponses) QueryInformationCapabilitiesWithResponse(ctx conte
 // PreviewInformationBatchWithBodyWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) PreviewInformationBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error) {
@@ -1776,7 +1820,7 @@ func (c *ClientWithResponses) PreviewInformationBatchWithBodyWithResponse(ctx co
 // PreviewInformationBatchWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Bounded batch lead preview for admin operators. Returns only candidate binding status and masked per-domain record counts; sensitive field expansion is strictly prohibited and results are released only after audit commits.
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
 func (c *ClientWithResponses) PreviewInformationBatchWithResponse(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error) {
 	rsp, err := c.PreviewInformationBatch(ctx, body, reqEditors...)
 	if err != nil {

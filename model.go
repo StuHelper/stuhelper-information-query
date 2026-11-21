@@ -107,6 +107,8 @@ type Audit struct {
 	Action       string                   `json:"action"`
 	Result       string                   `json:"result"`
 	Count        int                      `json:"count"`
+	LeadKind     string                   `json:"lead_kind,omitempty"`
+	LeadDigest   string                   `json:"lead_digest,omitempty"`
 	Targets      []string                 `json:"targets"`
 	Fields       []string                 `json:"fields"`
 	Basis        []string                 `json:"basis"`
@@ -216,15 +218,22 @@ type CandidatePreview struct {
 
 type BatchPreviewEntry struct {
 	Index             int                `json:"index"`
+	Value             string             `json:"value"`
 	Candidates        []CandidatePreview `json:"candidates"`
 	HasMoreCandidates bool               `json:"has_more_candidates"`
 }
+
+func (BatchPreviewEntry) String() string     { return "informationquery.BatchPreviewEntry{redacted}" }
+func (e BatchPreviewEntry) GoString() string { return e.String() }
 
 type BatchPreviewResult struct {
 	Entries            []BatchPreviewEntry `json:"entries"`
 	UnavailableDomains []string            `json:"unavailable_domains"`
 	Truncated          bool                `json:"truncated"`
 }
+
+func (BatchPreviewResult) String() string     { return "informationquery.BatchPreviewResult{redacted}" }
+func (r BatchPreviewResult) GoString() string { return r.String() }
 
 // AuditRetentionMonitor inspects expired audit backlog using read-only maintenance privileges.
 type AuditRetentionMonitor interface {

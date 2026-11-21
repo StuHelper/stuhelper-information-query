@@ -17,7 +17,7 @@ var processCursorKey = func() (key [32]byte) {
 	return key
 }()
 
-func (s Service) cursorMAC(body []byte) []byte {
+func (s Service) keyedDigest(body []byte) []byte {
 	key := s.CursorKey
 	if key == nil {
 		key = &processCursorKey
@@ -29,7 +29,7 @@ func (s Service) cursorMAC(body []byte) []byte {
 
 func (s Service) encodeContinuation(c continuation) string {
 	body, _ := json.Marshal(c)
-	return base64.RawURLEncoding.EncodeToString(append(s.cursorMAC(body), body...))
+	return base64.RawURLEncoding.EncodeToString(append(s.keyedDigest(body), body...))
 }
 
 func (s Service) parseContinuation(token string) (continuation, bool) {
@@ -39,7 +39,7 @@ func (s Service) parseContinuation(token string) (continuation, bool) {
 		return c, false
 	}
 	body := data[sha256.Size:]
-	if !hmac.Equal(data[:sha256.Size], s.cursorMAC(body)) {
+	if !hmac.Equal(data[:sha256.Size], s.keyedDigest(body)) {
 		return c, false
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))

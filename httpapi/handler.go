@@ -66,6 +66,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if r.URL.Path == previewPath {
+		reject = h.Service.RejectPreview
+	}
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" {
 		if r.URL.Path == capabilitiesPath {

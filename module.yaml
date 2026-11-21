@@ -85,3 +85,8 @@ scenario_tests:
     - postgres/repository_test.go#TestAuditLegalHoldExclusionReleaseAndRoleIsolation
     - postgres/repository_test.go#TestPruneSeesHoldCommittedWhileWaiting
     - postgres/repository_test.go#TestPendingStatsBoundedBacklogAndOldestTimestamp
+  IQ-12:
+    - preview_disclosure_test.go#TestBatchPreviewEchoAndLengthForEveryLeadKind
+    - preview_test.go#TestBoundedBatchPreviewAuthorizationMaskingAndAudit
+    - httpapi/handler_test.go#TestBatchPreviewHTTPRejectsSensitiveFieldsAndSupportsSDK
+    - postgres/preview_test.go#TestBatchPreviewSanitizesStoredAggregateAndProviderAudit
