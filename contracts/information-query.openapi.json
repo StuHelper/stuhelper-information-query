@@ -69,6 +69,46 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Unknown route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -94,6 +134,182 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency or audit unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "POST"
+                  ]
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Expected application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/information-query/capabilities": {
+      "post": {
+        "operationId": "queryInformationCapabilities",
+        "description": "Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapabilitiesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/information-query/preview": {
+      "post": {
+        "operationId": "previewInformationBatch",
+        "description": "Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPreviewResult"
                 }
               }
             }
@@ -184,14 +400,17 @@
             "enum": [
               "name",
               "student_id",
+              "staff_id",
               "qq",
               "account"
-            ]
+            ],
+            "description": "Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key."
           },
           "value": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 2048,
+            "description": "Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -227,12 +446,14 @@
                 "refund_payee"
               ]
             },
-            "description": "Sensitive categories explicitly requested; omitted means masked identity fields only."
+            "description": "Sensitive categories explicitly requested and checked against the caller's permissions. Names, student IDs, phone numbers, and QQ numbers are masked by default. Full identity values require requesting identity and passing both authorization and audit."
           },
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed."
           },
           "limit": {
             "type": "integer",
@@ -243,7 +464,7 @@
           "after": {
             "type": "string",
             "maxLength": 4096,
-            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation."
+            "description": "Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant."
           }
         },
         "required": [
@@ -253,7 +474,21 @@
           "domains",
           "purpose",
           "limit"
-        ]
+        ],
+        "not": {
+          "properties": {
+            "kind": {
+              "not": {
+                "enum": [
+                  "account"
+                ]
+              }
+            },
+            "value": {
+              "minLength": 257
+            }
+          }
+        }
       },
       "Field": {
         "type": "object",
@@ -360,6 +595,62 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "invalid_parameter",
+              "invalid_scope",
+              "school_required",
+              "invalid_account_key",
+              "cursor_mismatch",
+              "candidate_changed",
+              "payload_too_large",
+              "bot_disabled",
+              "bot_forbidden",
+              "channel_forbidden",
+              "domain_forbidden",
+              "field_forbidden",
+              "audit_forbidden",
+              "unauthenticated",
+              "auth_unavailable",
+              "resolver_unavailable",
+              "provider_unavailable",
+              "audit_unavailable"
+            ],
+            "description": "Machine-readable failure cause for localized recovery guidance."
+          },
+          "domain": {
+            "type": "string",
+            "enum": [
+              "profiles",
+              "verification",
+              "catalog",
+              "reviews",
+              "resources",
+              "billing",
+              "groups"
+            ],
+            "description": "Affected business domain when a domain check or provider failed; never echoes query values.",
+            "x-enum-varnames": [
+              "ErrorDomainProfiles",
+              "ErrorDomainVerification",
+              "ErrorDomainCatalog",
+              "ErrorDomainReviews",
+              "ErrorDomainResources",
+              "ErrorDomainBilling",
+              "ErrorDomainGroups"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "identity",
+              "document",
+              "material",
+              "refund_payee"
+            ],
+            "description": "Affected sensitive field category when field authorization failed; never echoes query values."
           }
         },
         "required": [
@@ -376,22 +667,59 @@
           "purpose": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 512
+            "maxLength": 512,
+            "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]*$",
+            "description": "Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters."
           },
           "after": {
             "type": "string",
-            "pattern": "^[0-9]*$"
+            "pattern": "^[0-9]*$",
+            "description": "Omitted or empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page."
           },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional exact operator account key filter."
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional target account key matched against recorded audit targets."
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional audit action filter."
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional execution result filter."
+          },
+          "channel": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional delivery channel filter."
+          },
+          "created_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive lower bound on audit creation time."
+          },
+          "created_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional inclusive upper bound on audit creation time."
           }
         },
         "required": [
           "scope",
           "purpose",
-          "after",
           "limit"
         ]
       },
@@ -415,19 +743,65 @@
             "$ref": "#/components/schemas/Scope"
           },
           "channel": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "admin",
+              "bot_private",
+              "bot_group",
+              "unknown"
+            ]
           },
           "target_group": {
             "type": "string"
           },
           "action": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "query",
+              "query.rejected",
+              "audit.query",
+              "audit.rejected",
+              "provider.query",
+              "batch.preview",
+              "unknown"
+            ]
           },
           "result": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "success",
+              "denied",
+              "invalid_request",
+              "unauthenticated",
+              "unavailable",
+              "unknown"
+            ]
           },
           "count": {
             "type": "integer"
+          },
+          "lead_kind": {
+            "type": "string",
+            "enum": [
+              "name",
+              "student_id",
+              "staff_id",
+              "qq",
+              "account"
+            ],
+            "x-enum-varnames": [
+              "AuditLeadKindName",
+              "AuditLeadKindStudentId",
+              "AuditLeadKindStaffId",
+              "AuditLeadKindQq",
+              "AuditLeadKindAccount"
+            ],
+            "description": "Input kind for a batch preview audit when the kind is recognized."
+          },
+          "lead_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Keyed digest of the validated ordered batch, scoped to its request ID."
           },
           "targets": {
             "type": "array",
@@ -438,7 +812,13 @@
           "fields": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "identity",
+                "document",
+                "material",
+                "refund_payee"
+              ]
             }
           },
           "basis": {
@@ -503,7 +883,8 @@
           },
           "changed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time."
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -513,7 +894,7 @@
             "items": {
               "$ref": "#/components/schemas/Field"
             },
-            "description": "Masked distinguishing fields only."
+            "description": "Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms."
           }
         },
         "required": [
@@ -537,11 +918,354 @@
             "items": {
               "$ref": "#/components/schemas/Record"
             }
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "True when this candidate has unreturned domain records continuing onto a subsequent page."
           }
         },
         "required": [
           "candidate",
-          "items"
+          "items",
+          "has_more"
+        ]
+      },
+      "CapabilitiesRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "allowed_domains": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAllowedDomainsProfiles",
+                "CapabilitiesAllowedDomainsVerification",
+                "CapabilitiesAllowedDomainsCatalog",
+                "CapabilitiesAllowedDomainsReviews",
+                "CapabilitiesAllowedDomainsResources",
+                "CapabilitiesAllowedDomainsBilling",
+                "CapabilitiesAllowedDomainsGroups"
+              ]
+            },
+            "description": "Domains authorized for the current principal within the evaluated scope."
+          },
+          "allowed_fields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "identity",
+                "document",
+                "material",
+                "refund_payee"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAllowedFieldsIdentity",
+                "CapabilitiesAllowedFieldsDocument",
+                "CapabilitiesAllowedFieldsMaterial",
+                "CapabilitiesAllowedFieldsRefundPayee"
+              ]
+            },
+            "description": "Sensitive field categories authorized for the current principal across the evaluated scope."
+          },
+          "available_domains": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAvailableDomainsProfiles",
+                "CapabilitiesAvailableDomainsVerification",
+                "CapabilitiesAvailableDomainsCatalog",
+                "CapabilitiesAvailableDomainsReviews",
+                "CapabilitiesAvailableDomainsResources",
+                "CapabilitiesAvailableDomainsBilling",
+                "CapabilitiesAvailableDomainsGroups"
+              ]
+            },
+            "description": "Domains with registered providers on the current host."
+          },
+          "available_kinds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "student_id",
+                "qq",
+                "account",
+                "staff_id"
+              ],
+              "x-enum-varnames": [
+                "CapabilitiesAvailableKindsName",
+                "CapabilitiesAvailableKindsStudentId",
+                "CapabilitiesAvailableKindsQq",
+                "CapabilitiesAvailableKindsAccount",
+                "CapabilitiesAvailableKindsStaffId"
+              ]
+            },
+            "description": "Query lead kinds currently supported on the host."
+          },
+          "audit_readable": {
+            "type": "boolean",
+            "description": "Whether the current principal may read audit logs in the evaluated scope on the current channel."
+          },
+          "bot_enabled": {
+            "type": "boolean",
+            "description": "Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope."
+          }
+        },
+        "required": [
+          "scope",
+          "allowed_domains",
+          "allowed_fields",
+          "available_domains",
+          "available_kinds",
+          "audit_readable",
+          "bot_enabled"
+        ]
+      },
+      "BatchPreviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "name",
+              "student_id",
+              "qq",
+              "account",
+              "staff_id"
+            ],
+            "x-enum-varnames": [
+              "BatchPreviewRequestKindName",
+              "BatchPreviewRequestKindStudentId",
+              "BatchPreviewRequestKindQq",
+              "BatchPreviewRequestKindAccount",
+              "BatchPreviewRequestKindStaffId"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Up to 20 unique leads of the same kind, each at most 256 Unicode code points, including account keys. The authorized requester receives each original value in the corresponding response entry."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "domains": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "profiles",
+                "verification",
+                "catalog",
+                "reviews",
+                "resources",
+                "billing",
+                "groups"
+              ],
+              "x-enum-varnames": [
+                "BatchPreviewRequestDomainsProfiles",
+                "BatchPreviewRequestDomainsVerification",
+                "BatchPreviewRequestDomainsCatalog",
+                "BatchPreviewRequestDomainsReviews",
+                "BatchPreviewRequestDomainsResources",
+                "BatchPreviewRequestDomainsBilling",
+                "BatchPreviewRequestDomainsGroups"
+              ]
+            }
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Required operator input. Preview uses a fixed audit purpose to keep free text out of audit storage."
+          }
+        },
+        "required": [
+          "kind",
+          "values",
+          "scope",
+          "domains",
+          "purpose"
+        ]
+      },
+      "DomainSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "type": "string",
+            "enum": [
+              "profiles",
+              "verification",
+              "catalog",
+              "reviews",
+              "resources",
+              "billing",
+              "groups"
+            ],
+            "x-enum-varnames": [
+              "DomainSummaryDomainProfiles",
+              "DomainSummaryDomainVerification",
+              "DomainSummaryDomainCatalog",
+              "DomainSummaryDomainReviews",
+              "DomainSummaryDomainResources",
+              "DomainSummaryDomainBilling",
+              "DomainSummaryDomainGroups"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Bounded count of authorized records (capped at 20 per domain in batch preview)."
+          },
+          "current_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Bounded count of current=true records among the sampled domain items."
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "True when the candidate has more than 20 records in this domain."
+          }
+        },
+        "required": [
+          "domain",
+          "count",
+          "current_count",
+          "has_more"
+        ]
+      },
+      "CandidatePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/Candidate"
+          },
+          "domain_counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DomainSummary"
+            }
+          }
+        },
+        "required": [
+          "candidate",
+          "domain_counts"
+        ]
+      },
+      "BatchPreviewEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 19,
+            "description": "Zero-based index in the input values array."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Original submitted lead at this index. Return only to the authenticated requester after audit commits. Do not log or persist this value."
+          },
+          "candidates": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/CandidatePreview"
+            }
+          },
+          "has_more_candidates": {
+            "type": "boolean",
+            "description": "True when additional candidates existed beyond the per-lead or batch processing budget."
+          }
+        },
+        "required": [
+          "index",
+          "value",
+          "candidates",
+          "has_more_candidates"
+        ]
+      },
+      "BatchPreviewResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/BatchPreviewEntry"
+            }
+          },
+          "unavailable_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the overall batch candidate (50) or record (700) budget stopped further probing."
+          }
+        },
+        "required": [
+          "entries",
+          "unavailable_domains",
+          "truncated"
         ]
       }
     },

@@ -2,10 +2,13 @@ package informationquery_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	iq "github.com/StuHelper/stuhelper-information-query"
 	"github.com/StuHelper/stuhelper-platform/account"
 	"github.com/StuHelper/stuhelper-platform/admin"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,9 +60,9 @@ func (p *provider) Query(_ context.Context, _ account.Principal, _ iq.Query) ([]
 func fixture() (*iq.Service, *repo, *auth, *provider, iq.Query) {
 	r := &repo{}
 	a := &auth{caps: map[string]bool{"information-query.profiles.read": true}, scope: scope}
-	p := &provider{items: []iq.Record{{ID: "profiles:1", Subject: "user:1", Scope: scope, Source: "qq-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "name", Category: "identity", Value: "同名"}, {Name: "qq", Category: "identity", Value: "123456789"}, {Name: "document", Category: "document", Value: "private-document"}, {Name: "material", Category: "material", Value: "private-material"}, {Name: "refund_payee", Category: "refund_payee", Value: "private-refund"}}}}}
+	p := &provider{items: []iq.Record{{ID: "profiles:1", Subject: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: scope, Source: "qq-binding", Current: true, ChangedAt: time.Now(), Fields: []iq.Field{{Name: "name", Category: "identity", Value: "同名"}, {Name: "qq", Category: "identity", Value: "123456789"}, {Name: "document", Category: "document", Value: "private-document"}, {Name: "material", Category: "material", Value: "private-material"}, {Name: "refund_payee", Category: "refund_payee", Value: "private-refund"}}}}}
 	s := &iq.Service{Auth: a, Repo: r, Providers: map[string]iq.Provider{"profiles": p}}
-	q := iq.Query{Kind: "account", Value: "user:1", Scope: scope, Domains: []string{"profiles"}, Fields: []string{}, Purpose: "业务核查", Limit: 20}
+	q := iq.Query{Kind: "account", Value: (account.Principal{Issuer: "test", Subject: "user"}).Key(), Scope: scope, Domains: []string{"profiles"}, Fields: []string{}, Purpose: "业务核查", Limit: 20}
 	return s, r, a, p, q
 }
 func run(s *iq.Service, q iq.Query) (iq.Result, error) {
@@ -78,7 +81,7 @@ func TestPlatformSensitiveFields(t *testing.T) {
 func TestScopeAndDomainIsolation(t *testing.T) {
 	s, r, _, p, q := fixture()
 	q.Scope.School = "school-b"
-	if _, e := run(s, q); !errors.Is(e, iq.ErrForbidden) || p.calls != 0 || r.records[0].Result != "forbidden" {
+	if _, e := run(s, q); !errors.Is(e, iq.ErrForbidden) || p.calls != 0 || r.records[0].Result != "denied" {
 		t.Fatal(e)
 	}
 	q.Scope = scope
@@ -96,18 +99,32 @@ func TestScopeAndDomainIsolation(t *testing.T) {
 	}
 }
 func TestSensitiveMaskAuditAndFailure(t *testing.T) {
-	s, r, a, _, q := fixture()
+	s, r, a, p, q := fixture()
+	identities := []iq.Field{
+		{Name: "name", Category: "identity", Value: "同名"},
+		{Name: "student_id", Category: "identity", Value: "STUD-TEST-001"},
+		{Name: "phone", Category: "identity", Value: "19900001234"},
+		{Name: "qq", Category: "identity", Value: "123456789"},
+	}
+	p.items[0].Fields = append(slices.Clone(identities), p.items[0].Fields[2:]...)
 	out, e := run(s, q)
-	if e != nil || len(out.Groups[0].Items[0].Fields) != 2 || out.Groups[0].Items[0].Fields[0].Value != "***" || !out.Groups[0].Items[0].Fields[1].Masked {
+	if e != nil || recordCount(out) != 1 || len(out.Groups[0].Items[0].Fields) != len(identities) {
 		t.Fatal("mask", e)
 	}
+	for i, field := range out.Groups[0].Items[0].Fields {
+		if field.Name != identities[i].Name || field.Value != "***" || !field.Masked {
+			t.Errorf("identity field %d was not masked", i)
+		}
+	}
 	q.Fields = []string{"identity"}
-	if _, e = run(s, q); !errors.Is(e, iq.ErrForbidden) {
-		t.Fatal(e)
+	if denied, err := run(s, q); !errors.Is(err, iq.ErrForbidden) || recordCount(denied) != 0 {
+		t.Fatalf("identity disclosure without a sensitive grant: %v", err)
 	}
 	a.caps["information-query.identity.read"] = true
 	out, e = run(s, q)
-	if e != nil || out.Groups[0].Items[0].Fields[0].Value != "同名" || r.records[len(r.records)-1].Count != 1 {
+	lastAudit := r.records[len(r.records)-1]
+	if e != nil || recordCount(out) != 1 || !slices.Equal(out.Groups[0].Items[0].Fields, identities) ||
+		lastAudit.Count != 1 || !slices.Equal(lastAudit.Fields, []string{"identity"}) {
 		t.Fatal("disclosure", e)
 	}
 	for _, category := range []string{"document", "material", "refund_payee"} {
@@ -154,9 +171,17 @@ func TestAuditIndependentAndUnavailableProvider(t *testing.T) {
 	if _, e := s.Audit(context.Background(), actor, "r", f); e != nil {
 		t.Fatal(e)
 	}
+	from := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	until := from.Add(-time.Second)
+	if _, e := s.Audit(context.Background(), actor, "r", iq.AuditFilter{Scope: scope, Purpose: "审计核查", Limit: 10, CreatedFrom: &from, CreatedUntil: &until}); !errors.Is(e, iq.ErrInvalid) {
+		t.Fatal("inverted time range accepted", e)
+	}
+	if _, e := s.Audit(context.Background(), actor, "r", iq.AuditFilter{Scope: scope, Purpose: "审计核查", Limit: 10, Target: "bad\nvalue"}); !errors.Is(e, iq.ErrInvalid) {
+		t.Fatal("control character in filter accepted", e)
+	}
 	s.Providers = nil
 	out, e := run(s, q)
-	if e != nil || len(out.UnavailableDomains) != 1 || len(r.records) != 3 {
+	if e != nil || len(out.UnavailableDomains) != 1 || len(r.records) != 5 {
 		t.Fatal(e)
 	}
 }
@@ -169,6 +194,10 @@ func TestInvalidAndAnonymous(t *testing.T) {
 	q.Scope.School = "*"
 	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || p.calls != 0 || len(r.records) != 2 {
 		t.Fatal(e)
+	}
+	q.Kind = "staff_id"
+	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) || p.calls != 0 || len(r.records) != 3 {
+		t.Fatal("staff_id must require explicit school", e)
 	}
 }
 
@@ -200,4 +229,208 @@ func recordCount(out iq.Result) int {
 		n += len(g.Items)
 	}
 	return n
+}
+
+func TestUnicodeMultilinePurposeAndControlChars(t *testing.T) {
+	s, _, a, _, q := fixture()
+	a.caps["information-query.audit.read"] = true
+	q.Purpose = strings.Repeat("核", 300) + "\n工单说明\t第二行"
+	if _, e := run(s, q); e != nil {
+		t.Fatalf("expected 309-rune multiline CJK purpose to succeed, got %v", e)
+	}
+	f := iq.AuditFilter{Scope: scope, Purpose: q.Purpose, Limit: 10}
+	if _, e := s.Audit(context.Background(), actor, "audit-req", f); e != nil {
+		t.Fatalf("expected multiline CJK audit purpose to succeed, got %v", e)
+	}
+	q.Purpose = strings.Repeat("核", 513)
+	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) {
+		t.Fatalf("expected 513-rune purpose to return ErrInvalid, got %v", e)
+	}
+	q.Purpose = "工单\x00注入"
+	if _, e := run(s, q); !errors.Is(e, iq.ErrInvalid) {
+		t.Fatalf("expected NUL byte in purpose to return ErrInvalid, got %v", e)
+	}
+}
+
+func TestAuditFieldsExcludeMaskedAndBusinessAndDeniedResult(t *testing.T) {
+	s, r, a, p, q := fixture()
+	p.items[0].Fields = append([]iq.Field{{Name: "title", Category: "business", Value: "course"}}, p.items[0].Fields...)
+	q.Fields = []string{}
+	out, e := run(s, q)
+	if e != nil || recordCount(out) != 1 {
+		t.Fatalf("default masked query failed: %v", e)
+	}
+	if len(r.records[0].Fields) != 0 {
+		t.Fatalf("masked/business fields leaked into Audit.Fields: %v", r.records[0].Fields)
+	}
+
+	q.Fields = []string{"identity"}
+	if _, e = run(s, q); !errors.Is(e, iq.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", e)
+	}
+	deniedAudit := r.records[len(r.records)-1]
+	if deniedAudit.Result != "denied" || !slices.Equal(deniedAudit.Fields, []string{"identity"}) {
+		t.Fatalf("unexpected denied audit: result=%q fields=%v", deniedAudit.Result, deniedAudit.Fields)
+	}
+
+	a.caps["information-query.identity.read"] = true
+	if _, e = run(s, q); e != nil {
+		t.Fatalf("authorized identity query failed: %v", e)
+	}
+	disclosedAudit := r.records[len(r.records)-1]
+	if disclosedAudit.Result != "success" || !slices.Equal(disclosedAudit.Fields, []string{"identity"}) {
+		t.Fatalf("expected Audit.Fields=[identity], got result=%q fields=%v", disclosedAudit.Result, disclosedAudit.Fields)
+	}
+
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Enum  []string `json:"enum"`
+					Items struct {
+						Enum []string `json:"enum"`
+					} `json:"items"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if e := json.Unmarshal(iq.OpenAPI(), &spec); e != nil {
+		t.Fatal(e)
+	}
+	auditProps := spec.Components.Schemas["Audit"].Properties
+	for _, field := range []string{"channel", "action", "result"} {
+		if len(auditProps[field].Enum) == 0 {
+			t.Fatalf("OpenAPI Audit.%s missing enum constraint", field)
+		}
+	}
+	if len(auditProps["fields"].Items.Enum) == 0 {
+		t.Fatal("OpenAPI Audit.fields.items missing enum constraint")
+	}
+}
+
+type failingProvider struct{}
+
+func (failingProvider) Query(context.Context, account.Principal, iq.Query) ([]iq.Record, error) {
+	return nil, errors.New("provider timeout SECRET-CLUE")
+}
+
+func TestSanitizedObserveHookStagesAndZeroLeak(t *testing.T) {
+	s, r, a, p, q := fixture()
+	a.platform = true
+	var events []iq.Event
+	s.Observe = func(ev iq.Event) {
+		events = append(events, ev)
+	}
+	q.Value = (account.Principal{Issuer: "test", Subject: "SECRET-USER-KEY"}).Key()
+	p.items[0].Subject = q.Value
+	p.items[0].Fields = []iq.Field{{Name: "id_num", Category: "document", Value: "SECRET-DOC-VALUE"}}
+	q.Fields = []string{"document"}
+
+	// 1. Successful query emits provider ok + audit success without leaking values.
+	if _, err := s.Query(context.Background(), actor, "req-obs-1", iq.Delivery{Channel: "admin"}, q); err != nil {
+		t.Fatal(err)
+	}
+	// 2. Missing resolver emits resolve stage resolver_missing.
+	nameQ := q
+	nameQ.Kind = "name"
+	nameQ.Value = "SECRET-REAL-NAME"
+	if _, err := s.Query(context.Background(), actor, "req-obs-2", iq.Delivery{Channel: "admin"}, nameQ); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	// 3. Provider failure emits provider stage provider_error with domain="profiles".
+	s.Providers["profiles"] = failingProvider{}
+	if _, err := s.Query(context.Background(), actor, "req-obs-3", iq.Delivery{Channel: "admin"}, q); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	// 4. Contract violation (wrong Subject) emits contract stage invalid_record.
+	p.items[0].Subject = "wrong-subject"
+	s.Providers["profiles"] = p
+	if _, err := s.Query(context.Background(), actor, "req-obs-4", iq.Delivery{Channel: "admin"}, q); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	// 5. Audit failure emits audit stage audit_append_error.
+	p.items[0].Subject = q.Value
+	r.fail = true
+	if _, err := s.Query(context.Background(), actor, "req-obs-5", iq.Delivery{Channel: "admin"}, q); !errors.Is(err, iq.ErrUnavailable) {
+		t.Fatal(err)
+	}
+
+	seenStageCode := map[string]bool{}
+	for _, ev := range events {
+		seenStageCode[string(ev.Stage)+":"+ev.Code] = true
+	}
+	for _, want := range []string{
+		"provider:ok",
+		"audit:success",
+		"resolve:resolver_missing",
+		"provider:provider_error",
+		"contract:invalid_record",
+		"audit:audit_append_error",
+	} {
+		if !seenStageCode[want] {
+			t.Fatalf("missing expected telemetry event %q in %+v", want, events)
+		}
+	}
+	serialized, _ := json.Marshal(events)
+	for _, secret := range []string{(account.Principal{Issuer: "test", Subject: "SECRET-USER-KEY"}).Key(), "SECRET-USER-KEY", "SECRET-DOC-VALUE", "SECRET-REAL-NAME", "SECRET-CLUE"} {
+		if strings.Contains(string(serialized), secret) {
+			t.Fatalf("telemetry leaked secret %q: %s", secret, string(serialized))
+		}
+	}
+}
+
+func TestOperatorCapabilitiesPreflight(t *testing.T) {
+	s, r, a, _, query := fixture()
+	s.Resolvers = map[string]iq.Resolver{"name": nil, "qq": dummyResolver{}}
+	a.scope = admin.Scope{School: "school-a", Group: "*", Module: "profiles"}
+	a.caps = map[string]bool{
+		"information-query.profiles.read": true,
+		"information-query.identity.read": true,
+	}
+	evalScope := admin.Scope{School: "school-a", Group: "*", Module: "*"}
+	caps, err := s.Capabilities(context.Background(), actor, iq.Delivery{Channel: "admin"}, iq.CapabilitiesRequest{Scope: &evalScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.records) != 0 {
+		t.Fatalf("capabilities must not append audit records, got %d", len(r.records))
+	}
+	if len(caps.AllowedDomains) != 1 || caps.AllowedDomains[0] != "profiles" {
+		t.Fatalf("unexpected allowed domains: %+v", caps.AllowedDomains)
+	}
+	if len(caps.AllowedFields) != 1 || caps.AllowedFields[0] != "identity" {
+		t.Fatalf("unexpected allowed fields: %+v", caps.AllowedFields)
+	}
+	if len(caps.AvailableDomains) != 1 || caps.AvailableDomains[0] != "profiles" {
+		t.Fatalf("unexpected available domains: %+v", caps.AvailableDomains)
+	}
+	if len(caps.AvailableKinds) != 2 || caps.AvailableKinds[0] != "qq" || caps.AvailableKinds[1] != "account" {
+		t.Fatalf("unexpected available kinds: %+v", caps.AvailableKinds)
+	}
+	if caps.AuditReadable || caps.BotEnabled {
+		t.Fatalf("unexpected audit/bot flags: %+v", caps)
+	}
+	// Using preflight allowed_domains + allowed_fields directly succeeds without 403.
+	out, err := s.Query(context.Background(), actor, "req-ok", iq.Delivery{Channel: "admin"}, iq.Query{
+		Kind:    "account",
+		Value:   query.Value,
+		Scope:   evalScope,
+		Domains: caps.AllowedDomains,
+		Fields:  caps.AllowedFields,
+		Purpose: "preflight-verified",
+		Limit:   10,
+	})
+	if err != nil || recordCount(out) != 1 {
+		t.Fatalf("query with preflight capabilities failed: %+v %v", out, err)
+	}
+	// Bot channel without BotEnabled is rejected on capabilities too.
+	if _, err = s.Capabilities(context.Background(), actor, iq.Delivery{Channel: "bot_group", Group: "g1"}, iq.CapabilitiesRequest{}); !errors.Is(err, iq.ErrForbidden) {
+		t.Fatalf("expected bot capabilities forbidden when disabled, got %v", err)
+	}
+}
+
+type dummyResolver struct{}
+
+func (dummyResolver) Resolve(context.Context, account.Principal, iq.Lead) ([]iq.Candidate, string, error) {
+	return nil, "", nil
 }

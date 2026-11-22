@@ -13,7 +13,480 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for AuditAction.
+const (
+	AuditActionAuditQuery    AuditAction = "audit.query"
+	AuditActionAuditRejected AuditAction = "audit.rejected"
+	AuditActionBatchPreview  AuditAction = "batch.preview"
+	AuditActionProviderQuery AuditAction = "provider.query"
+	AuditActionQuery         AuditAction = "query"
+	AuditActionQueryRejected AuditAction = "query.rejected"
+	AuditActionUnknown       AuditAction = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditAction enum.
+func (e AuditAction) Valid() bool {
+	switch e {
+	case AuditActionAuditQuery:
+		return true
+	case AuditActionAuditRejected:
+		return true
+	case AuditActionBatchPreview:
+		return true
+	case AuditActionProviderQuery:
+		return true
+	case AuditActionQuery:
+		return true
+	case AuditActionQueryRejected:
+		return true
+	case AuditActionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditChannel.
+const (
+	AuditChannelAdmin      AuditChannel = "admin"
+	AuditChannelBotGroup   AuditChannel = "bot_group"
+	AuditChannelBotPrivate AuditChannel = "bot_private"
+	AuditChannelUnknown    AuditChannel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditChannel enum.
+func (e AuditChannel) Valid() bool {
+	switch e {
+	case AuditChannelAdmin:
+		return true
+	case AuditChannelBotGroup:
+		return true
+	case AuditChannelBotPrivate:
+		return true
+	case AuditChannelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditFields.
+const (
+	AuditFieldsDocument    AuditFields = "document"
+	AuditFieldsIdentity    AuditFields = "identity"
+	AuditFieldsMaterial    AuditFields = "material"
+	AuditFieldsRefundPayee AuditFields = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the AuditFields enum.
+func (e AuditFields) Valid() bool {
+	switch e {
+	case AuditFieldsDocument:
+		return true
+	case AuditFieldsIdentity:
+		return true
+	case AuditFieldsMaterial:
+		return true
+	case AuditFieldsRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditLeadKind.
+const (
+	AuditLeadKindAccount   AuditLeadKind = "account"
+	AuditLeadKindName      AuditLeadKind = "name"
+	AuditLeadKindQq        AuditLeadKind = "qq"
+	AuditLeadKindStaffId   AuditLeadKind = "staff_id"
+	AuditLeadKindStudentId AuditLeadKind = "student_id"
+)
+
+// Valid indicates whether the value is a known member of the AuditLeadKind enum.
+func (e AuditLeadKind) Valid() bool {
+	switch e {
+	case AuditLeadKindAccount:
+		return true
+	case AuditLeadKindName:
+		return true
+	case AuditLeadKindQq:
+		return true
+	case AuditLeadKindStaffId:
+		return true
+	case AuditLeadKindStudentId:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuditResult.
+const (
+	AuditResultDenied          AuditResult = "denied"
+	AuditResultInvalidRequest  AuditResult = "invalid_request"
+	AuditResultSuccess         AuditResult = "success"
+	AuditResultUnauthenticated AuditResult = "unauthenticated"
+	AuditResultUnavailable     AuditResult = "unavailable"
+	AuditResultUnknown         AuditResult = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AuditResult enum.
+func (e AuditResult) Valid() bool {
+	switch e {
+	case AuditResultDenied:
+		return true
+	case AuditResultInvalidRequest:
+		return true
+	case AuditResultSuccess:
+		return true
+	case AuditResultUnauthenticated:
+		return true
+	case AuditResultUnavailable:
+		return true
+	case AuditResultUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BatchPreviewRequestDomains.
+const (
+	BatchPreviewRequestDomainsBilling      BatchPreviewRequestDomains = "billing"
+	BatchPreviewRequestDomainsCatalog      BatchPreviewRequestDomains = "catalog"
+	BatchPreviewRequestDomainsGroups       BatchPreviewRequestDomains = "groups"
+	BatchPreviewRequestDomainsProfiles     BatchPreviewRequestDomains = "profiles"
+	BatchPreviewRequestDomainsResources    BatchPreviewRequestDomains = "resources"
+	BatchPreviewRequestDomainsReviews      BatchPreviewRequestDomains = "reviews"
+	BatchPreviewRequestDomainsVerification BatchPreviewRequestDomains = "verification"
+)
+
+// Valid indicates whether the value is a known member of the BatchPreviewRequestDomains enum.
+func (e BatchPreviewRequestDomains) Valid() bool {
+	switch e {
+	case BatchPreviewRequestDomainsBilling:
+		return true
+	case BatchPreviewRequestDomainsCatalog:
+		return true
+	case BatchPreviewRequestDomainsGroups:
+		return true
+	case BatchPreviewRequestDomainsProfiles:
+		return true
+	case BatchPreviewRequestDomainsResources:
+		return true
+	case BatchPreviewRequestDomainsReviews:
+		return true
+	case BatchPreviewRequestDomainsVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BatchPreviewRequestKind.
+const (
+	BatchPreviewRequestKindAccount   BatchPreviewRequestKind = "account"
+	BatchPreviewRequestKindName      BatchPreviewRequestKind = "name"
+	BatchPreviewRequestKindQq        BatchPreviewRequestKind = "qq"
+	BatchPreviewRequestKindStaffId   BatchPreviewRequestKind = "staff_id"
+	BatchPreviewRequestKindStudentId BatchPreviewRequestKind = "student_id"
+)
+
+// Valid indicates whether the value is a known member of the BatchPreviewRequestKind enum.
+func (e BatchPreviewRequestKind) Valid() bool {
+	switch e {
+	case BatchPreviewRequestKindAccount:
+		return true
+	case BatchPreviewRequestKindName:
+		return true
+	case BatchPreviewRequestKindQq:
+		return true
+	case BatchPreviewRequestKindStaffId:
+		return true
+	case BatchPreviewRequestKindStudentId:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAllowedDomains.
+const (
+	CapabilitiesAllowedDomainsBilling      CapabilitiesAllowedDomains = "billing"
+	CapabilitiesAllowedDomainsCatalog      CapabilitiesAllowedDomains = "catalog"
+	CapabilitiesAllowedDomainsGroups       CapabilitiesAllowedDomains = "groups"
+	CapabilitiesAllowedDomainsProfiles     CapabilitiesAllowedDomains = "profiles"
+	CapabilitiesAllowedDomainsResources    CapabilitiesAllowedDomains = "resources"
+	CapabilitiesAllowedDomainsReviews      CapabilitiesAllowedDomains = "reviews"
+	CapabilitiesAllowedDomainsVerification CapabilitiesAllowedDomains = "verification"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAllowedDomains enum.
+func (e CapabilitiesAllowedDomains) Valid() bool {
+	switch e {
+	case CapabilitiesAllowedDomainsBilling:
+		return true
+	case CapabilitiesAllowedDomainsCatalog:
+		return true
+	case CapabilitiesAllowedDomainsGroups:
+		return true
+	case CapabilitiesAllowedDomainsProfiles:
+		return true
+	case CapabilitiesAllowedDomainsResources:
+		return true
+	case CapabilitiesAllowedDomainsReviews:
+		return true
+	case CapabilitiesAllowedDomainsVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAllowedFields.
+const (
+	CapabilitiesAllowedFieldsDocument    CapabilitiesAllowedFields = "document"
+	CapabilitiesAllowedFieldsIdentity    CapabilitiesAllowedFields = "identity"
+	CapabilitiesAllowedFieldsMaterial    CapabilitiesAllowedFields = "material"
+	CapabilitiesAllowedFieldsRefundPayee CapabilitiesAllowedFields = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAllowedFields enum.
+func (e CapabilitiesAllowedFields) Valid() bool {
+	switch e {
+	case CapabilitiesAllowedFieldsDocument:
+		return true
+	case CapabilitiesAllowedFieldsIdentity:
+		return true
+	case CapabilitiesAllowedFieldsMaterial:
+		return true
+	case CapabilitiesAllowedFieldsRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAvailableDomains.
+const (
+	CapabilitiesAvailableDomainsBilling      CapabilitiesAvailableDomains = "billing"
+	CapabilitiesAvailableDomainsCatalog      CapabilitiesAvailableDomains = "catalog"
+	CapabilitiesAvailableDomainsGroups       CapabilitiesAvailableDomains = "groups"
+	CapabilitiesAvailableDomainsProfiles     CapabilitiesAvailableDomains = "profiles"
+	CapabilitiesAvailableDomainsResources    CapabilitiesAvailableDomains = "resources"
+	CapabilitiesAvailableDomainsReviews      CapabilitiesAvailableDomains = "reviews"
+	CapabilitiesAvailableDomainsVerification CapabilitiesAvailableDomains = "verification"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAvailableDomains enum.
+func (e CapabilitiesAvailableDomains) Valid() bool {
+	switch e {
+	case CapabilitiesAvailableDomainsBilling:
+		return true
+	case CapabilitiesAvailableDomainsCatalog:
+		return true
+	case CapabilitiesAvailableDomainsGroups:
+		return true
+	case CapabilitiesAvailableDomainsProfiles:
+		return true
+	case CapabilitiesAvailableDomainsResources:
+		return true
+	case CapabilitiesAvailableDomainsReviews:
+		return true
+	case CapabilitiesAvailableDomainsVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilitiesAvailableKinds.
+const (
+	CapabilitiesAvailableKindsAccount   CapabilitiesAvailableKinds = "account"
+	CapabilitiesAvailableKindsName      CapabilitiesAvailableKinds = "name"
+	CapabilitiesAvailableKindsQq        CapabilitiesAvailableKinds = "qq"
+	CapabilitiesAvailableKindsStaffId   CapabilitiesAvailableKinds = "staff_id"
+	CapabilitiesAvailableKindsStudentId CapabilitiesAvailableKinds = "student_id"
+)
+
+// Valid indicates whether the value is a known member of the CapabilitiesAvailableKinds enum.
+func (e CapabilitiesAvailableKinds) Valid() bool {
+	switch e {
+	case CapabilitiesAvailableKindsAccount:
+		return true
+	case CapabilitiesAvailableKindsName:
+		return true
+	case CapabilitiesAvailableKindsQq:
+		return true
+	case CapabilitiesAvailableKindsStaffId:
+		return true
+	case CapabilitiesAvailableKindsStudentId:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainSummaryDomain.
+const (
+	DomainSummaryDomainBilling      DomainSummaryDomain = "billing"
+	DomainSummaryDomainCatalog      DomainSummaryDomain = "catalog"
+	DomainSummaryDomainGroups       DomainSummaryDomain = "groups"
+	DomainSummaryDomainProfiles     DomainSummaryDomain = "profiles"
+	DomainSummaryDomainResources    DomainSummaryDomain = "resources"
+	DomainSummaryDomainReviews      DomainSummaryDomain = "reviews"
+	DomainSummaryDomainVerification DomainSummaryDomain = "verification"
+)
+
+// Valid indicates whether the value is a known member of the DomainSummaryDomain enum.
+func (e DomainSummaryDomain) Valid() bool {
+	switch e {
+	case DomainSummaryDomainBilling:
+		return true
+	case DomainSummaryDomainCatalog:
+		return true
+	case DomainSummaryDomainGroups:
+		return true
+	case DomainSummaryDomainProfiles:
+		return true
+	case DomainSummaryDomainResources:
+		return true
+	case DomainSummaryDomainReviews:
+		return true
+	case DomainSummaryDomainVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorDomain.
+const (
+	ErrorDomainBilling      ErrorDomain = "billing"
+	ErrorDomainCatalog      ErrorDomain = "catalog"
+	ErrorDomainGroups       ErrorDomain = "groups"
+	ErrorDomainProfiles     ErrorDomain = "profiles"
+	ErrorDomainResources    ErrorDomain = "resources"
+	ErrorDomainReviews      ErrorDomain = "reviews"
+	ErrorDomainVerification ErrorDomain = "verification"
+)
+
+// Valid indicates whether the value is a known member of the ErrorDomain enum.
+func (e ErrorDomain) Valid() bool {
+	switch e {
+	case ErrorDomainBilling:
+		return true
+	case ErrorDomainCatalog:
+		return true
+	case ErrorDomainGroups:
+		return true
+	case ErrorDomainProfiles:
+		return true
+	case ErrorDomainResources:
+		return true
+	case ErrorDomainReviews:
+		return true
+	case ErrorDomainVerification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorField.
+const (
+	ErrorFieldDocument    ErrorField = "document"
+	ErrorFieldIdentity    ErrorField = "identity"
+	ErrorFieldMaterial    ErrorField = "material"
+	ErrorFieldRefundPayee ErrorField = "refund_payee"
+)
+
+// Valid indicates whether the value is a known member of the ErrorField enum.
+func (e ErrorField) Valid() bool {
+	switch e {
+	case ErrorFieldDocument:
+		return true
+	case ErrorFieldIdentity:
+		return true
+	case ErrorFieldMaterial:
+		return true
+	case ErrorFieldRefundPayee:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorReason.
+const (
+	ErrorReasonAuditForbidden      ErrorReason = "audit_forbidden"
+	ErrorReasonAuditUnavailable    ErrorReason = "audit_unavailable"
+	ErrorReasonAuthUnavailable     ErrorReason = "auth_unavailable"
+	ErrorReasonBotDisabled         ErrorReason = "bot_disabled"
+	ErrorReasonBotForbidden        ErrorReason = "bot_forbidden"
+	ErrorReasonCandidateChanged    ErrorReason = "candidate_changed"
+	ErrorReasonChannelForbidden    ErrorReason = "channel_forbidden"
+	ErrorReasonCursorMismatch      ErrorReason = "cursor_mismatch"
+	ErrorReasonDomainForbidden     ErrorReason = "domain_forbidden"
+	ErrorReasonFieldForbidden      ErrorReason = "field_forbidden"
+	ErrorReasonInvalidAccountKey   ErrorReason = "invalid_account_key"
+	ErrorReasonInvalidParameter    ErrorReason = "invalid_parameter"
+	ErrorReasonInvalidScope        ErrorReason = "invalid_scope"
+	ErrorReasonPayloadTooLarge     ErrorReason = "payload_too_large"
+	ErrorReasonProviderUnavailable ErrorReason = "provider_unavailable"
+	ErrorReasonResolverUnavailable ErrorReason = "resolver_unavailable"
+	ErrorReasonSchoolRequired      ErrorReason = "school_required"
+	ErrorReasonUnauthenticated     ErrorReason = "unauthenticated"
+)
+
+// Valid indicates whether the value is a known member of the ErrorReason enum.
+func (e ErrorReason) Valid() bool {
+	switch e {
+	case ErrorReasonAuditForbidden:
+		return true
+	case ErrorReasonAuditUnavailable:
+		return true
+	case ErrorReasonAuthUnavailable:
+		return true
+	case ErrorReasonBotDisabled:
+		return true
+	case ErrorReasonBotForbidden:
+		return true
+	case ErrorReasonCandidateChanged:
+		return true
+	case ErrorReasonChannelForbidden:
+		return true
+	case ErrorReasonCursorMismatch:
+		return true
+	case ErrorReasonDomainForbidden:
+		return true
+	case ErrorReasonFieldForbidden:
+		return true
+	case ErrorReasonInvalidAccountKey:
+		return true
+	case ErrorReasonInvalidParameter:
+		return true
+	case ErrorReasonInvalidScope:
+		return true
+	case ErrorReasonPayloadTooLarge:
+		return true
+	case ErrorReasonProviderUnavailable:
+		return true
+	case ErrorReasonResolverUnavailable:
+		return true
+	case ErrorReasonSchoolRequired:
+		return true
+	case ErrorReasonUnauthenticated:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for FieldCategory.
 const (
@@ -104,6 +577,7 @@ const (
 	Account   QueryKind = "account"
 	Name      QueryKind = "name"
 	Qq        QueryKind = "qq"
+	StaffId   QueryKind = "staff_id"
 	StudentId QueryKind = "student_id"
 )
 
@@ -116,6 +590,8 @@ func (e QueryKind) Valid() bool {
 		return true
 	case Qq:
 		return true
+	case StaffId:
+		return true
 	case StudentId:
 		return true
 	default:
@@ -125,28 +601,73 @@ func (e QueryKind) Valid() bool {
 
 // Audit defines model for Audit.
 type Audit struct {
-	Action      string    `json:"action"`
-	Actor       string    `json:"actor"`
-	Basis       []string  `json:"basis"`
-	Channel     string    `json:"channel"`
-	Count       int       `json:"count"`
-	CreatedAt   time.Time `json:"created_at"`
-	Fields      []string  `json:"fields"`
-	Id          string    `json:"id"`
-	Purpose     string    `json:"purpose"`
-	RequestId   string    `json:"request_id"`
-	Result      string    `json:"result"`
-	Scope       Scope     `json:"scope"`
-	TargetGroup string    `json:"target_group"`
-	Targets     []string  `json:"targets"`
+	Action    AuditAction   `json:"action"`
+	Actor     string        `json:"actor"`
+	Basis     []string      `json:"basis"`
+	Channel   AuditChannel  `json:"channel"`
+	Count     int           `json:"count"`
+	CreatedAt time.Time     `json:"created_at"`
+	Fields    []AuditFields `json:"fields"`
+	Id        string        `json:"id"`
+
+	// LeadDigest Keyed digest of the validated ordered batch, scoped to its request ID.
+	LeadDigest *string `json:"lead_digest,omitempty"`
+
+	// LeadKind Input kind for a batch preview audit when the kind is recognized.
+	LeadKind    *AuditLeadKind `json:"lead_kind,omitempty"`
+	Purpose     string         `json:"purpose"`
+	RequestId   string         `json:"request_id"`
+	Result      AuditResult    `json:"result"`
+	Scope       Scope          `json:"scope"`
+	TargetGroup string         `json:"target_group"`
+	Targets     []string       `json:"targets"`
 }
+
+// AuditAction defines model for Audit.Action.
+type AuditAction string
+
+// AuditChannel defines model for Audit.Channel.
+type AuditChannel string
+
+// AuditFields defines model for Audit.Fields.
+type AuditFields string
+
+// AuditLeadKind Input kind for a batch preview audit when the kind is recognized.
+type AuditLeadKind string
+
+// AuditResult defines model for Audit.Result.
+type AuditResult string
 
 // AuditFilter defines model for AuditFilter.
 type AuditFilter struct {
-	After   string `json:"after"`
-	Limit   int    `json:"limit"`
+	// Action Optional audit action filter.
+	Action *string `json:"action,omitempty"`
+
+	// Actor Optional exact operator account key filter.
+	Actor *string `json:"actor,omitempty"`
+
+	// After Omitted or empty starts at the newest audit ID. Continue toward older IDs using the exclusive next_cursor from the previous page.
+	After *string `json:"after,omitempty"`
+
+	// Channel Optional delivery channel filter.
+	Channel *string `json:"channel,omitempty"`
+
+	// CreatedFrom Optional inclusive lower bound on audit creation time.
+	CreatedFrom *time.Time `json:"created_from,omitempty"`
+
+	// CreatedUntil Optional inclusive upper bound on audit creation time.
+	CreatedUntil *time.Time `json:"created_until,omitempty"`
+	Limit        int        `json:"limit"`
+
+	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed. Recorded as the reason for inspection, separate from search filters.
 	Purpose string `json:"purpose"`
-	Scope   Scope  `json:"scope"`
+
+	// Result Optional execution result filter.
+	Result *string `json:"result,omitempty"`
+	Scope  Scope   `json:"scope"`
+
+	// Target Optional target account key matched against recorded audit targets.
+	Target *string `json:"target,omitempty"`
 }
 
 // AuditPage defines model for AuditPage.
@@ -155,13 +676,57 @@ type AuditPage struct {
 	NextCursor string  `json:"next_cursor"`
 }
 
+// BatchPreviewEntry defines model for BatchPreviewEntry.
+type BatchPreviewEntry struct {
+	Candidates []CandidatePreview `json:"candidates"`
+
+	// HasMoreCandidates True when additional candidates existed beyond the per-lead or batch processing budget.
+	HasMoreCandidates bool `json:"has_more_candidates"`
+
+	// Index Zero-based index in the input values array.
+	Index int `json:"index"`
+
+	// Value Original submitted lead at this index. Return only to the authenticated requester after audit commits. Do not log or persist this value.
+	Value string `json:"value"`
+}
+
+// BatchPreviewRequest defines model for BatchPreviewRequest.
+type BatchPreviewRequest struct {
+	Domains []BatchPreviewRequestDomains `json:"domains"`
+	Kind    BatchPreviewRequestKind      `json:"kind"`
+
+	// Purpose Required operator input. Preview uses a fixed audit purpose to keep free text out of audit storage.
+	Purpose string `json:"purpose"`
+	Scope   Scope  `json:"scope"`
+
+	// Values Up to 20 unique leads of the same kind, each at most 256 Unicode code points, including account keys. The authorized requester receives each original value in the corresponding response entry.
+	Values []string `json:"values"`
+}
+
+// BatchPreviewRequestDomains defines model for BatchPreviewRequest.Domains.
+type BatchPreviewRequestDomains string
+
+// BatchPreviewRequestKind defines model for BatchPreviewRequest.Kind.
+type BatchPreviewRequestKind string
+
+// BatchPreviewResult defines model for BatchPreviewResult.
+type BatchPreviewResult struct {
+	Entries []BatchPreviewEntry `json:"entries"`
+
+	// Truncated True when the overall batch candidate (50) or record (700) budget stopped further probing.
+	Truncated          bool     `json:"truncated"`
+	UnavailableDomains []string `json:"unavailable_domains"`
+}
+
 // Candidate defines model for Candidate.
 type Candidate struct {
-	Account   string    `json:"account"`
+	Account string `json:"account"`
+
+	// ChangedAt For direct account lookup this is the first request time of the pagination chain. Resolved candidates use the source change time.
 	ChangedAt time.Time `json:"changed_at"`
 	Current   bool      `json:"current"`
 
-	// Label Masked distinguishing fields only.
+	// Label Masked distinguishing fields only; may include masked identity fields and non-sensitive business attributes (such as college/department or student/teacher role, with masked=true) to disambiguate homonyms.
 	Label  []Field `json:"label"`
 	Scope  Scope   `json:"scope"`
 	Source string  `json:"source"`
@@ -170,13 +735,95 @@ type Candidate struct {
 // CandidateGroup defines model for CandidateGroup.
 type CandidateGroup struct {
 	Candidate Candidate `json:"candidate"`
-	Items     []Record  `json:"items"`
+
+	// HasMore True when this candidate has unreturned domain records continuing onto a subsequent page.
+	HasMore bool     `json:"has_more"`
+	Items   []Record `json:"items"`
 }
+
+// CandidatePreview defines model for CandidatePreview.
+type CandidatePreview struct {
+	Candidate    Candidate       `json:"candidate"`
+	DomainCounts []DomainSummary `json:"domain_counts"`
+}
+
+// Capabilities defines model for Capabilities.
+type Capabilities struct {
+	// AllowedDomains Domains authorized for the current principal within the evaluated scope.
+	AllowedDomains []CapabilitiesAllowedDomains `json:"allowed_domains"`
+
+	// AllowedFields Sensitive field categories authorized for the current principal across the evaluated scope.
+	AllowedFields []CapabilitiesAllowedFields `json:"allowed_fields"`
+
+	// AuditReadable Whether the current principal may read audit logs in the evaluated scope on the current channel.
+	AuditReadable bool `json:"audit_readable"`
+
+	// AvailableDomains Domains with registered providers on the current host.
+	AvailableDomains []CapabilitiesAvailableDomains `json:"available_domains"`
+
+	// AvailableKinds Query lead kinds currently supported on the host.
+	AvailableKinds []CapabilitiesAvailableKinds `json:"available_kinds"`
+
+	// BotEnabled Whether bot channel queries are enabled on the host and authorized for the principal in the evaluated scope.
+	BotEnabled bool  `json:"bot_enabled"`
+	Scope      Scope `json:"scope"`
+}
+
+// CapabilitiesAllowedDomains defines model for Capabilities.AllowedDomains.
+type CapabilitiesAllowedDomains string
+
+// CapabilitiesAllowedFields defines model for Capabilities.AllowedFields.
+type CapabilitiesAllowedFields string
+
+// CapabilitiesAvailableDomains defines model for Capabilities.AvailableDomains.
+type CapabilitiesAvailableDomains string
+
+// CapabilitiesAvailableKinds defines model for Capabilities.AvailableKinds.
+type CapabilitiesAvailableKinds string
+
+// CapabilitiesRequest defines model for CapabilitiesRequest.
+type CapabilitiesRequest struct {
+	Scope *Scope `json:"scope,omitempty"`
+}
+
+// DomainSummary defines model for DomainSummary.
+type DomainSummary struct {
+	// Count Bounded count of authorized records (capped at 20 per domain in batch preview).
+	Count int `json:"count"`
+
+	// CurrentCount Bounded count of current=true records among the sampled domain items.
+	CurrentCount int                 `json:"current_count"`
+	Domain       DomainSummaryDomain `json:"domain"`
+
+	// HasMore True when the candidate has more than 20 records in this domain.
+	HasMore bool `json:"has_more"`
+}
+
+// DomainSummaryDomain defines model for DomainSummary.Domain.
+type DomainSummaryDomain string
 
 // Error defines model for Error.
 type Error struct {
 	Code string `json:"code"`
+
+	// Domain Affected business domain when a domain check or provider failed; never echoes query values.
+	Domain *ErrorDomain `json:"domain,omitempty"`
+
+	// Field Affected sensitive field category when field authorization failed; never echoes query values.
+	Field *ErrorField `json:"field,omitempty"`
+
+	// Reason Machine-readable failure cause for localized recovery guidance.
+	Reason *ErrorReason `json:"reason,omitempty"`
 }
+
+// ErrorDomain Affected business domain when a domain check or provider failed; never echoes query values.
+type ErrorDomain string
+
+// ErrorField Affected sensitive field category when field authorization failed; never echoes query values.
+type ErrorField string
+
+// ErrorReason Machine-readable failure cause for localized recovery guidance.
+type ErrorReason string
 
 // Field defines model for Field.
 type Field struct {
@@ -191,19 +838,25 @@ type FieldCategory string
 
 // Query defines model for Query.
 type Query struct {
-	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 700 domain records; a short page can have a continuation.
+	// After Opaque composite continuation for candidate and domain records; reuse only with the same query and principal. Stable exclusive pagination for unchanged source facts. Each request processes at most 50 candidates and 100 returned domain records; a short page can have a continuation. The server authenticates the cursor. Restart from page one if it is invalid. Field and domain selection order is insignificant.
 	After   *string        `json:"after,omitempty"`
 	Domains []QueryDomains `json:"domains"`
 
-	// Fields Sensitive categories explicitly requested; omitted means masked identity fields only.
+	// Fields Sensitive categories explicitly requested and checked against the caller's permissions. Names, student IDs, phone numbers, and QQ numbers are masked by default. Full identity values require requesting identity and passing both authorization and audit.
 	Fields *[]QueryFields `json:"fields,omitempty"`
-	Kind   QueryKind      `json:"kind"`
+
+	// Kind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
+	Kind QueryKind `json:"kind"`
 
 	// Limit Total returned domain records, across all candidate groups. Candidate groups are capped at 50; processing budget may produce a shorter page.
-	Limit   int    `json:"limit"`
+	Limit int `json:"limit"`
+
+	// Purpose Up to 512 Unicode code points. Line breaks and tabs are allowed.
 	Purpose string `json:"purpose"`
 	Scope   Scope  `json:"scope"`
-	Value   string `json:"value"`
+
+	// Value Canonical platform issuer:subject key for account (up to 2048 ASCII bytes). Other clues allow up to 256 Unicode code points.
+	Value string `json:"value"`
 }
 
 // QueryDomains defines model for Query.Domains.
@@ -212,7 +865,7 @@ type QueryDomains string
 // QueryFields defines model for Query.Fields.
 type QueryFields string
 
-// QueryKind defines model for Query.Kind.
+// QueryKind Lead kind: name, student_id (requires explicit school), staff_id (faculty/staff identifier, requires explicit school), qq, or full account key.
 type QueryKind string
 
 // Record defines model for Record.
@@ -244,6 +897,12 @@ type Scope struct {
 
 // QueryInformationAuditJSONRequestBody defines body for QueryInformationAudit for application/json ContentType.
 type QueryInformationAuditJSONRequestBody = AuditFilter
+
+// QueryInformationCapabilitiesJSONRequestBody defines body for QueryInformationCapabilities for application/json ContentType.
+type QueryInformationCapabilitiesJSONRequestBody = CapabilitiesRequest
+
+// PreviewInformationBatchJSONRequestBody defines body for PreviewInformationBatch for application/json ContentType.
+type PreviewInformationBatchJSONRequestBody = BatchPreviewRequest
 
 // QueryInformationJSONRequestBody defines body for QueryInformation for application/json ContentType.
 type QueryInformationJSONRequestBody = Query
@@ -334,6 +993,30 @@ type ClientInterface interface {
 	// Authenticated principal and delivery channel are supplied by trusted host middleware. Query values must not be logged. Sensitive data is released only after audit commits.
 	QueryInformationAudit(ctx context.Context, body QueryInformationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// QueryInformationCapabilitiesWithBody performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	QueryInformationCapabilitiesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// QueryInformationCapabilities performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	QueryInformationCapabilities(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewInformationBatchWithBody performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+	PreviewInformationBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewInformationBatch performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+	PreviewInformationBatch(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// QueryInformationWithBody performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -369,6 +1052,70 @@ func (c *Client) QueryInformationAuditWithBody(ctx context.Context, contentType 
 // Authenticated principal and delivery channel are supplied by trusted host middleware. Query values must not be logged. Sensitive data is released only after audit commits.
 func (c *Client) QueryInformationAudit(ctx context.Context, body QueryInformationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewQueryInformationAuditRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// QueryInformationCapabilitiesWithBody performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+// with any type of body and a specified content type.
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+func (c *Client) QueryInformationCapabilitiesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryInformationCapabilitiesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// QueryInformationCapabilities performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+func (c *Client) QueryInformationCapabilities(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryInformationCapabilitiesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PreviewInformationBatchWithBody performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
+// with any type of body and a specified content type.
+//
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+func (c *Client) PreviewInformationBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewInformationBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PreviewInformationBatch performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+func (c *Client) PreviewInformationBatch(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewInformationBatchRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -432,6 +1179,86 @@ func NewQueryInformationAuditRequestWithBody(server string, contentType string, 
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/information-query/audit/query")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewQueryInformationCapabilitiesRequest calls the generic QueryInformationCapabilities builder with application/json body
+func NewQueryInformationCapabilitiesRequest(server string, body QueryInformationCapabilitiesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewQueryInformationCapabilitiesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewQueryInformationCapabilitiesRequestWithBody constructs an http.Request for the QueryInformationCapabilities method, with any body, and a specified content type
+func NewQueryInformationCapabilitiesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/information-query/capabilities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPreviewInformationBatchRequest calls the generic PreviewInformationBatch builder with application/json body
+func NewPreviewInformationBatchRequest(server string, body PreviewInformationBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPreviewInformationBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPreviewInformationBatchRequestWithBody constructs an http.Request for the PreviewInformationBatch method, with any body, and a specified content type
+func NewPreviewInformationBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/information-query/preview")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -549,6 +1376,34 @@ type ClientWithResponsesInterface interface {
 	// Authenticated principal and delivery channel are supplied by trusted host middleware. Query values must not be logged. Sensitive data is released only after audit commits.
 	QueryInformationAuditWithResponse(ctx context.Context, body QueryInformationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationAuditResponse, error)
 
+	// QueryInformationCapabilitiesWithBodyWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	QueryInformationCapabilitiesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error)
+
+	// QueryInformationCapabilitiesWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+	QueryInformationCapabilitiesWithResponse(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error)
+
+	// PreviewInformationBatchWithBodyWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	PreviewInformationBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error)
+
+	// PreviewInformationBatchWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+	PreviewInformationBatchWithResponse(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error)
+
 	// QueryInformationWithBodyWithResponse performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -564,6 +1419,11 @@ type ClientWithResponsesInterface interface {
 	QueryInformationWithResponse(ctx context.Context, body QueryInformationJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationResponse, error)
 }
 
+// QueryInformationAuditResponse405Headers the declared response headers of an HTTP 405 response for QueryInformationAudit
+type QueryInformationAuditResponse405Headers struct {
+	Allow *string
+}
+
 type QueryInformationAuditResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -575,8 +1435,16 @@ type QueryInformationAuditResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON405 the response for an HTTP 405 `application/json` response
+	JSON405 *Error
+	// JSON415 the response for an HTTP 415 `application/json` response
+	JSON415 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
+	// Headers405 the parsed response headers for an HTTP 405 response
+	Headers405 *QueryInformationAuditResponse405Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -597,6 +1465,21 @@ func (r QueryInformationAuditResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r QueryInformationAuditResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON405 returns the response for an HTTP 405 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON405() *Error {
+	return r.JSON405
+}
+
+// GetJSON415 returns the response for an HTTP 415 `application/json` response
+func (r QueryInformationAuditResponse) GetJSON415() *Error {
+	return r.JSON415
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -633,6 +1516,149 @@ func (r QueryInformationAuditResponse) ContentType() string {
 	return ""
 }
 
+type QueryInformationCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Capabilities
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON200() *Capabilities {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r QueryInformationCapabilitiesResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r QueryInformationCapabilitiesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r QueryInformationCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r QueryInformationCapabilitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r QueryInformationCapabilitiesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PreviewInformationBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BatchPreviewResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PreviewInformationBatchResponse) GetJSON200() *BatchPreviewResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PreviewInformationBatchResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r PreviewInformationBatchResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PreviewInformationBatchResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r PreviewInformationBatchResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r PreviewInformationBatchResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PreviewInformationBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PreviewInformationBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PreviewInformationBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// QueryInformationResponse405Headers the declared response headers of an HTTP 405 response for QueryInformation
+type QueryInformationResponse405Headers struct {
+	Allow *string
+}
+
 type QueryInformationResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -644,8 +1670,16 @@ type QueryInformationResponse struct {
 	JSON401 *Error
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON405 the response for an HTTP 405 `application/json` response
+	JSON405 *Error
+	// JSON415 the response for an HTTP 415 `application/json` response
+	JSON415 *Error
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *Error
+	// Headers405 the parsed response headers for an HTTP 405 response
+	Headers405 *QueryInformationResponse405Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -666,6 +1700,21 @@ func (r QueryInformationResponse) GetJSON401() *Error {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r QueryInformationResponse) GetJSON403() *Error {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r QueryInformationResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON405 returns the response for an HTTP 405 `application/json` response
+func (r QueryInformationResponse) GetJSON405() *Error {
+	return r.JSON405
+}
+
+// GetJSON415 returns the response for an HTTP 415 `application/json` response
+func (r QueryInformationResponse) GetJSON415() *Error {
+	return r.JSON415
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
@@ -728,6 +1777,58 @@ func (c *ClientWithResponses) QueryInformationAuditWithResponse(ctx context.Cont
 	return ParseQueryInformationAuditResponse(rsp)
 }
 
+// QueryInformationCapabilitiesWithBodyWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request,
+// with any type of body and a specified content type.
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) QueryInformationCapabilitiesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error) {
+	rsp, err := c.QueryInformationCapabilitiesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryInformationCapabilitiesResponse(rsp)
+}
+
+// QueryInformationCapabilitiesWithResponse performs a POST /api/v1/information-query/capabilities (the `QueryInformationCapabilities` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Read-only preflight inspection of authorized and host-assembled information-query capabilities for the current principal and requested scope.
+func (c *ClientWithResponses) QueryInformationCapabilitiesWithResponse(ctx context.Context, body QueryInformationCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryInformationCapabilitiesResponse, error) {
+	rsp, err := c.QueryInformationCapabilities(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryInformationCapabilitiesResponse(rsp)
+}
+
+// PreviewInformationBatchWithBodyWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request,
+// with any type of body and a specified content type.
+//
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) PreviewInformationBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error) {
+	rsp, err := c.PreviewInformationBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewInformationBatchResponse(rsp)
+}
+
+// PreviewInformationBatchWithResponse performs a POST /api/v1/information-query/preview (the `PreviewInformationBatch` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Batch lead preview for the authenticated, authorized admin who submitted the request. Each response entry echoes its submitted lead and includes masked candidate information and bounded per-domain record counts after audit commits. The request and response values must stay out of logs. Audit records contain the lead kind and a keyed digest; preview omits target account identifiers.
+func (c *ClientWithResponses) PreviewInformationBatchWithResponse(ctx context.Context, body PreviewInformationBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewInformationBatchResponse, error) {
+	rsp, err := c.PreviewInformationBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewInformationBatchResponse(rsp)
+}
+
 // QueryInformationWithBodyWithResponse performs a POST /api/v1/information-query/query (the `QueryInformation` operationId) request,
 // with any type of body and a specified content type.
 //
@@ -770,6 +1871,148 @@ func ParseQueryInformationAuditResponse(rsp *http.Response) (*QueryInformationAu
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest AuditPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON415 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 405:
+		var headers QueryInformationAuditResponse405Headers
+		if values := rsp.Header.Values("Allow"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Allow", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Allow = &value
+		}
+		response.Headers405 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseQueryInformationCapabilitiesResponse parses an HTTP response from a QueryInformationCapabilitiesWithResponse call
+func ParseQueryInformationCapabilitiesResponse(rsp *http.Response) (*QueryInformationCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &QueryInformationCapabilitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Capabilities
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePreviewInformationBatchResponse parses an HTTP response from a PreviewInformationBatchWithResponse call
+func ParsePreviewInformationBatchResponse(rsp *http.Response) (*PreviewInformationBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PreviewInformationBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BatchPreviewResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -850,6 +2093,27 @@ func ParseQueryInformationResponse(rsp *http.Response) (*QueryInformationRespons
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 405:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON405 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON415 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -857,6 +2121,19 @@ func ParseQueryInformationResponse(rsp *http.Response) (*QueryInformationRespons
 		}
 		response.JSON503 = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 405:
+		var headers QueryInformationResponse405Headers
+		if values := rsp.Header.Values("Allow"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Allow", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Allow = &value
+		}
+		response.Headers405 = &headers
 	}
 
 	return response, nil
